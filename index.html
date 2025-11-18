@@ -3,17 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Small Solar System</title>
+    <title>Galaxy Simulator</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <h1>My Solar System</h1>
+    <h1>Galaxy Simulator</h1>
 
     <div class="solar-system-container">
-        <div id="sun"></div>
-        
         </div>
+
+    <div class="controls-panel">
+        
+        <fieldset>
+            <legend>Add Celestial Body</legend>
+            <select id="body-type">
+                <option value="star">Star (Central Body)</option>
+                <option value="black-hole">Black Hole (Central Body)</option>
+                <option value="planet">Planet</option>
+            </select>
+            <input type="text" id="body-name" placeholder="Name">
+            <input type="number" id="body-size" placeholder="Size (px)">
+            <input type="text" id="body-color" placeholder="Color (e.g., #ff0000)">
+            <br>
+            <input type="number" id="orbit-size" placeholder="Orbit Size (px)">
+            <input type="number" id="orbit-duration" placeholder="Orbit Speed (sec)">
+            <button id="add-body-btn">Add Body</button>
+        </fieldset>
+        
+        <fieldset>
+            <legend>Manage Galaxies</legend>
+            <input type="text" id="galaxy-name" placeholder="Galaxy Name">
+            <button id="save-galaxy-btn">Save</button>
+            <br>
+            <select id="load-galaxy-menu"></select>
+            <button id="load-galaxy-btn">Load</button>
+            <button id="clear-galaxy-btn">Clear All</button>
+        </fieldset>
+
+    </div>
 
     <script src="script.js"></script>
 </body>
