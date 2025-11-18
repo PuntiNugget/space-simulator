@@ -1,0 +1,76 @@
+/* Basic page setup */
+body {
+    background-color: #00001a; /* Dark space blue */
+    color: white;
+    font-family: Arial, sans-serif;
+    display: grid;
+    place-items: center;
+    min-height: 100vh;
+    overflow: hidden; /* Hide parts of orbits that go off-screen */
+    text-align: center;
+}
+
+/* The main container for the simulation */
+.solar-system-container {
+    position: relative;
+    width: 600px; /* Adjust size as needed */
+    height: 600px;
+    display: grid;
+    place-items: center;
+}
+
+/* The Sun */
+#sun {
+    width: 50px;
+    height: 50px;
+    background-color: #fcdc4c; /* Sunny yellow */
+    border-radius: 50%;
+    box-shadow: 0 0 30px #fcdc4c, 0 0 60px #fcdc4c;
+    
+    /* Positioned in the absolute center */
+    position: absolute;
+}
+
+/* * The Orbit: An invisible, rotating circle.
+ * It's centered on the sun.
+ */
+.orbit {
+    position: absolute;
+    border-radius: 50%;
+    
+    /* For debugging, you can make the orbit visible: */
+    /* border: 1px dotted #555; */
+
+    /* This centers the orbit div */
+    top: 50%;
+    left: 50%;
+
+    /* This single animation rule does all the work! */
+    animation: spin linear infinite;
+}
+
+/* * The Planet: A small circle positioned
+ * as a child of its .orbit div.
+ */
+.planet {
+    position: absolute;
+    border-radius: 50%;
+    
+    /* Position the planet at the "top" of its orbit circle */
+    left: 50%;
+    transform: translateX(-50%); /* Center it on the orbit line */
+    
+    /* The 'top' value is set by JS to be half its own size,
+       making it sit perfectly on the orbit's edge. */
+}
+
+/* The rotation animation */
+@keyframes spin {
+    from {
+        /* We must include the translate to keep it centered */
+        transform: translate(-50%, -50%) rotate(0deg);
+    }
+    to {
+        transform: translate(-50%, -50%) rotate(360deg);
+    }
+}
