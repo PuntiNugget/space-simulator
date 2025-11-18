@@ -102,6 +102,31 @@
         .planet {
             background-color: #3d91f0;
         }
+
+        /* * ADD THIS NEW CLASS
+         */
+        .gravity-indicator {
+            position: absolute;
+            border: 2px dotted rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            
+            /* This centers the indicator on its parent planet */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            
+            /* Start invisible. JS will fade it in. */
+            opacity: 0;
+
+            /* Smooth out the changes */
+            transition: opacity 0.1s linear, width 0.1s linear, height 0.1s linear;
+        }
+        /*
+         * END OF NEW CLASS
+         */
+        
+        
+        /* === UI Form Styles (Slightly modified) === */
         
         /* === UI Form Styles (Slightly modified) === */
         .controls-panel-left,
@@ -354,10 +379,11 @@
             /**
              * Renders all bodies based on the currentGalaxy state.
              */
+           /**
+             * Renders all bodies based on the currentGalaxy state.
+             */
             function renderGalaxy() {
                 // 1. Pan the universe
-                // We offset the *entire* universe div.
-                // 300, 300 is the center of the 600x600 container.
                 const viewX = -viewport.x + 300;
                 const viewY = -viewport.y + 300;
                 universe.style.transform = `translate(${viewX}px, ${viewY}px)`;
@@ -365,6 +391,7 @@
                 // 2. Render all bodies
                 for (const body of currentGalaxy.bodies) {
                     let el = bodyElements.get(body.id);
+                    let indicatorEl;
                     
                     // If element doesn't exist, create it
                     if (!el) {
@@ -372,50 +399,49 @@
                         el.className = 'celestial-body ' + body.type;
                         el.style.width = `${body.size}px`;
                         el.style.height = `${body.size}px`;
-                        el.style.backgroundColor = body.color; // Set color
+                        el.style.backgroundColor = body.color;
+                        
+                        // ** NEW: Create the indicator element and add it *inside* the planet
+                        indicatorEl = document.createElement('div');
+                        indicatorEl.className = 'gravity-indicator';
+                        el.appendChild(indicatorEl); // Append it as a child
+                        
                         bodyElements.set(body.id, el);
                         universe.appendChild(el);
+                    } else {
+                        // ** NEW: Find the existing indicator element
+                        indicatorEl = el.querySelector('.gravity-indicator');
                     }
                     
-                    // --- !! NEW Gravity Indicator !! ---
-                    // This is your new, more visible gravitational pull visual!
-                    
-                    let shadowRgb = '255, 255, 255'; // Default to a white glow
-                    let shadowOpacity = 0.1;        // Default faint glow
-                    let shadowBlur = 10;            // Default blur in px
-
-                    if (currentGalaxy.bodies.length > 0 && !body.isStatic) {
+                    // --- !! NEW Dotted Circle Indicator !! ---
+                    if (currentGalaxy.bodies.length > 0 && !body.isStatic && indicatorEl) {
                         const centralBody = currentGalaxy.bodies[0];
                         const dx = centralBody.x - body.x;
                         const dy = centralBody.y - body.y;
-                        const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy)); // Use max(1) to avoid dividing by zero
-
-                        // Set the glow color based on the central body
-                        if (centralBody.type === 'black-hole') {
-                            shadowRgb = '138, 0, 194'; // Purple glow (from #8a00c2)
-                        } else if (centralBody.type === 'star') {
-                            shadowRgb = '255, 255, 255'; // Bright white glow for stars
-                        }
+                        const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
 
                         // Calculate opacity based on distance.
-                        // Closer = more opaque. I've increased '250' (from 100)
-                        // to make it much stronger.
-                        shadowOpacity = Math.min(0.9, 250 / dist); 
+                        // Closer = more opaque. (Tweak '200' to change sensitivity)
+                        const indicatorOpacity = Math.min(0.8, 200 / dist); 
                         
-                        // Calculate blur based on distance.
-                        // Closer = larger blur. I've increased '400' (from 100)
-                        // to make the effect much larger.
-                        shadowBlur = Math.min(50, 400 / dist); 
+                        // Calculate size of the ring.
+                        // It starts at 2x the planet size and grows as it gets closer.
+                        // (Tweak '1500' to change how fast it grows)
+                        const indicatorSize = (body.size * 2) + Math.min(100, 1500 / dist);
+
+                        // Apply the new size and opacity
+                        indicatorEl.style.width = `${indicatorSize}px`;
+                        indicatorEl.style.height = `${indicatorSize}px`;
+                        indicatorEl.style.opacity = indicatorOpacity;
+
+                    } else if (indicatorEl) {
+                        // Hide it if it's the central body
+                        indicatorEl.style.opacity = 0;
                     }
 
-                    // Apply the new, more visible shadow
-                    // This creates a glow with [Blur] and [Spread]
-                    // The glow color is now correct (white or purple) and
-                    // the opacity and size are much stronger.
-                    el.style.boxShadow = `0 0 ${shadowBlur}px ${body.size / 4}px rgba(${shadowRgb}, ${shadowOpacity})`;
+                    // ** (REMOVED the old box-shadow logic) **
                     
-                    // Update position
-                    // We offset by half its size to center it
+                    // Update body position
                     const elX = body.x - (body.size / 2);
                     const elY = body.y - (body.size / 2);
                     el.style.transform = `translate(${elX}px, ${elY}px)`;
