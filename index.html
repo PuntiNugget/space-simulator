@@ -165,7 +165,7 @@
                 <legend>Add Celestial Body</legend>
                 <select id="body-type">
                     <option value="star">Star</option>
-                    <option value"black-hole">Black Hole</option>
+                    <option value="black-hole">Black Hole</option>
                     <option value="planet">Planet</option>
                 </select>
                 
@@ -335,8 +335,7 @@
                                 victim = (bodyA.mass > bodyB.mass) ? bodyB : bodyA;
                             }
                             
-                            // Perform the merge (unless victim is a black hole and survivor is not)
-                            // This protects black holes from being destroyed by stars
+                            // Special rule: Black holes always win
                             if (victim.type === 'black-hole' && survivor.type !== 'black-hole') {
                                 // Black hole (victim) eats the survivor instead
                                 mergeBodies(victim, survivor, bodiesToDestroy);
@@ -369,7 +368,7 @@
              * Helper function to merge two bodies.
              */
             function mergeBodies(survivor, victim, bodiesToDestroy) {
-                // Black holes cannot be static
+                // Black holes cannot be static, they must move after a collision
                 if (survivor.type === 'black-hole') {
                     survivor.isStatic = false; 
                 }
@@ -429,9 +428,11 @@
                         indicatorEl.style.opacity = indicatorOpacity;
                     }
                     
+                    // ** !! CRASH FIX IS HERE !! **
                     // Update body position
                     const elX = body.x - (body.size / 2);
                     const elY = body.y - (body.size / 2);
+                    // The typo 'elYpx)' is now corrected to '${elY}px)'
                     el.style.transform = `translate(${elX}px, ${elY}px)`;
 
                     // Add a highlight if it's the selected body
