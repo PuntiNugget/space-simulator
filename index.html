@@ -4,11 +4,129 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Galaxy Simulator</title>
-    <link rel="stylesheet" href="style.css">
+
+    <style>
+        /* Basic page setup */
+        body {
+            background-color: #00001a;
+            color: white;
+            font-family: Arial, sans-serif;
+            display: flex; /* Use flexbox for layout */
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        /* The main container for the simulation */
+        .solar-system-container {
+            position: relative;
+            width: 600px;
+            height: 600px;
+            display: grid;
+            place-items: center;
+            border: 1px dashed #333; /* Added a border to see it */
+            margin-bottom: 20px;
+        }
+
+        /* === Central Body Styles === */
+        .star {
+            width: 50px;
+            height: 50px;
+            background-color: #fcdc4c;
+            border-radius: 50%;
+            box-shadow: 0 0 30px #fcdc4c, 0 0 60px #fcdc4c;
+            position: absolute;
+        }
+
+        .black-hole {
+            width: 40px;
+            height: 40px;
+            background-color: #000;
+            border-radius: 50%;
+            /* A subtle "accretion disk" glow */
+            box-shadow: 0 0 20px #8a00c2, 0 0 30px #c2008b;
+            position: absolute;
+            border: 2px solid #333;
+        }
+
+
+        /* === Planet and Orbit Styles === */
+        .orbit {
+            position: absolute;
+            border-radius: 50%;
+            /* border: 1px dotted #555; */
+            top: 50%;
+            left: 50%;
+            animation: spin linear infinite;
+        }
+
+        .planet {
+            position: absolute;
+            border-radius: 50%;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        @keyframes spin {
+            from {
+                transform: translate(-50%, -50%) rotate(0deg);
+            }
+            to {
+                transform: translate(-50%, -50%) rotate(360deg);
+            }
+        }
+
+        /* === UI Styles === */
+        .controls-panel {
+            display: flex;
+            gap: 20px;
+            background-color: #1a1a2a;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #444;
+        }
+
+        fieldset {
+            border: 1px solid #555;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        legend {
+            color: #fcdc4c;
+            font-weight: bold;
+        }
+
+        input, select, button {
+            padding: 5px;
+            border-radius: 4px;
+            border: 1px solid #777;
+            background-color: #333;
+            color: white;
+        }
+
+        button {
+            cursor: pointer;
+            background-color: #fcdc4c;
+            color: #000;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background-color: #fff;
+        }
+    </style>
 </head>
 <body>
 
-    <h1 style="color: red; background-color: yellow;">Galaxy Simulator</h1>
+    <h1>Galaxy Simulator</h1>
 
     <div class="solar-system-container">
         </div>
@@ -43,6 +161,166 @@
 
     </div>
 
-    <script src="script.js"></script>
+
+    <script>
+        // Wait for the DOM to be fully loaded before running the script
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // Get all our DOM elements
+            const container = document.querySelector('.solar-system-container');
+            const addBodyBtn = document.getElementById('add-body-btn');
+            const saveGalaxyBtn = document.getElementById('save-galaxy-btn');
+            const loadGalaxyBtn = document.getElementById('load-galaxy-btn');
+            const clearGalaxyBtn = document.getElementById('clear-galaxy-btn');
+            const loadGalaxyMenu = document.getElementById('load-galaxy-menu');
+
+            // === 1. The Core "State" Object ===
+            let currentGalaxy = {
+                centralBody: null,
+                planets: []
+            };
+
+            // === 2. The Main Render Function ===
+            function renderGalaxy() {
+                // Clear the container
+                container.innerHTML = '';
+
+                // Draw the Central Body (Star or Black Hole)
+                if (currentGalaxy.centralBody) {
+                    const body = currentGalaxy.centralBody;
+                    const bodyEl = document.createElement('div');
+                    
+                    bodyEl.classList.add(body.type); // 'star' or 'black-hole'
+                    bodyEl.style.width = `${body.size}px`;
+                    bodyEl.style.height = `${body.size}px`;
+                    
+                    // Set color for stars, use box-shadow for black holes
+                    if (body.type === 'star') {
+                        bodyEl.style.backgroundColor = body.color;
+                        bodyEl.style.boxShadow = `0 0 30px ${body.color}, 0 0 60px ${body.color}`;
+                    }
+                    
+                    container.appendChild(bodyEl);
+                }
+
+                // Draw all the Planets and their Orbits
+                currentGalaxy.planets.forEach(planet => {
+                    const orbit = document.createElement('div');
+                    orbit.classList.add('orbit');
+                    orbit.style.width = `${planet.orbitSize}px`;
+                    orbit.style.height = `${planet.orbitSize}px`;
+                    orbit.style.animationDuration = `${planet.orbitDuration}s`;
+
+                    const planetEl = document.createElement('div');
+                    planetEl.classList.add('planet');
+                    planetEl.style.width = `${planet.planetSize}px`;
+                    planetEl.style.height = `${planet.planetSize}px`;
+                    planetEl.style.backgroundColor = planet.color;
+                    planetEl.style.top = `-${planet.planetSize / 2}px`;
+
+                    orbit.appendChild(planetEl);
+                    container.appendChild(orbit);
+                });
+            }
+
+            // === 3. UI Event Listeners ===
+
+            // --- ADD A NEW BODY ---
+            addBodyBtn.addEventListener('click', () => {
+                // Get all values from the form
+                const type = document.getElementById('body-type').value;
+                const size = document.getElementById('body-size').value;
+                const color = document.getElementById('body-color').value;
+
+                if (type === 'planet') {
+                    const planetData = {
+                        name: document.getElementById('body-name').value,
+                        planetSize: parseInt(size),
+                        color: color,
+                        orbitSize: parseInt(document.getElementById('orbit-size').value),
+                        orbitDuration: parseInt(document.getElementById('orbit-duration').value)
+                    };
+                    // Add the new planet to our state
+                    currentGalaxy.planets.push(planetData);
+                } else {
+                    // Set the central body in our state
+                    currentGalaxy.centralBody = {
+                        type: type, // 'star' or 'black-hole'
+                        name: document.getElementById('body-name').value,
+                        size: parseInt(size),
+                        color: color // Only used by stars, but we save it anyway
+                    };
+                }
+                
+                // Re-draw the entire simulation
+                renderGalaxy();
+            });
+
+            // --- SAVE GALAXY ---
+            saveGalaxyBtn.addEventListener('click', () => {
+                const galaxyName = document.getElementById('galaxy-name').value;
+                if (!galaxyName) {
+                    alert('Please enter a name for your galaxy!');
+                    return;
+                }
+                // Save the currentGalaxy object to localStorage as a JSON string
+                localStorage.setItem(galaxyName, JSON.stringify(currentGalaxy));
+                alert(`Galaxy "${galaxyName}" saved!`);
+                populateLoadMenu(); // Update the dropdown list
+            });
+
+            // --- LOAD GALAXY ---
+            loadGalaxyBtn.addEventListener('click', () => {
+                const galaxyName = loadGalaxyMenu.value;
+                if (!galaxyName) {
+                    alert('Please select a galaxy to load.');
+                    return;
+                }
+                
+                // Get the JSON string from localStorage
+                const savedData = localStorage.getItem(galaxyName);
+                
+                // Convert the string back into an object
+                currentGalaxy = JSON.parse(savedData);
+                
+                // Re-draw the simulation with the loaded data
+                renderGalaxy();
+                alert(`Galaxy "${galaxyName}" loaded!`);
+            });
+
+            // --- CLEAR GALAXY ---
+            clearGalaxyBtn.addEventListener('click', () => {
+                if (confirm('Are you sure you want to clear the current galaxy?')) {
+                    // Reset the state to empty
+                    currentGalaxy = { centralBody: null, planets: [] };
+                    // Re-draw the empty simulation
+                    renderGalaxy();
+                }
+            });
+
+            // === 4. Utility Functions ===
+
+            // This function fills the <select> dropdown with saved galaxies
+            function populateLoadMenu() {
+                loadGalaxyMenu.innerHTML = ''; // Clear existing options
+                
+                // Loop through all items in localStorage
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    const option = document.createElement('option');
+                    option.value = key;
+                    option.textContent = key;
+                    loadGalaxyMenu.appendChild(option);
+                }
+            }
+
+            // --- Initial Setup ---
+            // Populate the load menu when the page first loads
+            populateLoadMenu();
+            // Render the (initially empty) galaxy
+            renderGalaxy();
+        });
+    </script>
+
 </body>
 </html>
