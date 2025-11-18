@@ -323,6 +323,9 @@
             /**
              * Renders all bodies (with Dotted Circle Indicator)
              */
+           /**
+             * Renders all bodies (Indicator based on *OWN MASS*)
+             */
             function renderGalaxy() {
                 // 1. Pan the universe
                 const viewX = -viewport.x + 300;
@@ -341,10 +344,10 @@
                         el.style.height = `${body.size}px`;
                         el.style.backgroundColor = body.color;
                         
-                        // Create the indicator element and add it *inside* the planet
+                        // Create the indicator element and add it *inside* the body
                         indicatorEl = document.createElement('div');
                         indicatorEl.className = 'gravity-indicator';
-                        el.appendChild(indicatorEl); // Append it as a child
+                        el.appendChild(indicatorEl); 
                         
                         bodyElements.set(body.id, el);
                         universe.appendChild(el);
@@ -353,22 +356,21 @@
                         indicatorEl = el.querySelector('.gravity-indicator');
                     }
                     
-                    // --- Dotted Circle Indicator Logic ---
-                    if (currentGalaxy.bodies.length > 0 && !body.isStatic && indicatorEl) {
-                        const centralBody = currentGalaxy.bodies[0];
-                        const dx = centralBody.x - body.x;
-                        const dy = centralBody.y - body.y;
-                        const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+                    // --- !! NEW Dotted Circle Indicator (based on *own mass*) !! ---
+                    if (indicatorEl) {
+                        
+                        // Calculate opacity based on the body's *own mass*.
+                        // Tweak '1500'. A 1500-mass star = full opacity.
+                        const indicatorOpacity = Math.min(0.8, body.mass / 1500); 
+                        
+                        // Calculate size based on the body's *own mass*.
+                        // Tweak '20'. A 1000-mass star = 50px extra radius.
+                        const indicatorSize = (body.size * 1.5) + (body.mass / 20);
 
-                        const indicatorOpacity = Math.min(0.8, 200 / dist); 
-                        const indicatorSize = (body.size * 2) + Math.min(100, 1500 / dist);
-
+                        // Apply the new size and opacity
                         indicatorEl.style.width = `${indicatorSize}px`;
                         indicatorEl.style.height = `${indicatorSize}px`;
                         indicatorEl.style.opacity = indicatorOpacity;
-
-                    } else if (indicatorEl) {
-                        indicatorEl.style.opacity = 0;
                     }
                     
                     // Update body position
@@ -377,7 +379,6 @@
                     el.style.transform = `translate(${elX}px, ${elY}px)`;
                 }
             }
-            
             
             // === 4. UI EVENT LISTENERS ===
             
