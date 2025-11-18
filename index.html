@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Galaxy Simulator</title>
+    <title>Physics Galaxy Simulator</title>
 
     <style>
         /* Basic page setup */
@@ -11,29 +11,21 @@
             background-color: #00001a;
             color: white;
             font-family: Arial, sans-serif;
-            display: flex; /* Use flexbox for layout */
+            display: flex;
             flex-direction: column;
             align-items: center;
             min-height: 100vh;
-            /* * !! KEY CHANGE !! 
-             * I removed 'overflow: hidden;' so you can scroll 
-             * if the screen is too small.
-             */
         }
 
         h1 {
             text-align: center;
         }
 
-        /* * !! NEW WRAPPER !!
-         * This new div will hold our 3 columns
-         * (Left Panel, Center Sim, Right Panel)
-         */
         .main-layout-container {
             display: flex;
-            flex-direction: row; /* Arrange items horizontally */
-            align-items: flex-start; /* Align panels to the top */
-            gap: 20px; /* Space between the panels */
+            flex-direction: row;
+            align-items: flex-start;
+            gap: 20px;
         }
 
         /* The main container for the simulation */
@@ -44,77 +36,88 @@
             display: grid;
             place-items: center;
             border: 1px dashed #333;
-            /* * !! KEY CHANGE !! 
-             * I removed 'margin-bottom: 20px;' since it's 
-             * no longer stacked vertically.
-             */
+            /* !! KEY CHANGE !!
+               We MUST use overflow: hidden; now to contain 
+               our new "pannable" universe.
+            */
+            overflow: hidden;
+            background-color: #00000a; /* Slightly darker inner space */
         }
         
-        /* * !! UPDATED CONTROLS STYLES !!
-         * Replaced '.controls-panel' with two new classes
-         * for our left and right sidebars.
+        /* * !! NEW !!
+         * This is the "universe" wrapper inside the container.
+         * This is the part that will pan around.
          */
+        #universe {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            /* 'transform' will be set by JS for panning */
+        }
+
+        /* * !! NEW TOOL STYLES !! *
+         * The styles for our new tool picker
+         */
+        .tools {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .tool-btn {
+            padding: 10px;
+            font-size: 24px;
+            background-color: #333;
+            color: white;
+            border: 2px solid #555;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        /* Style for the *active* tool */
+        .tool-btn.active {
+            background-color: #fcdc4c;
+            color: #000;
+            border-color: #fff;
+        }
+
+        /* === Body Styles (Star, Planet, etc.) === */
+        /* * !! KEY CHANGE !!
+         * All bodies are now absolutely positioned by JavaScript.
+         * We remove all 'animation' properties.
+         */
+        .celestial-body {
+            position: absolute;
+            border-radius: 50%;
+            /* 'transform' and 'box-shadow' will be set by JS */
+        }
+
+        .star {
+            background-color: #fcdc4c;
+        }
+
+        .black-hole {
+            background-color: #000;
+            border: 2px solid #333;
+        }
+
+        .planet {
+            background-color: #3d91f0;
+        }
+        
+        /* === UI Form Styles (Slightly modified) === */
         .controls-panel-left,
         .controls-panel-right {
-            width: 280px; /* Give the panels a fixed width */
+            width: 280px;
             background-color: #1a1a2a;
             padding: 15px;
             border-radius: 8px;
             border: 1px solid #444;
         }
-
-        /* === Central Body Styles (No Change) === */
-        .star {
-            width: 50px;
-            height: 50px;
-            background-color: #fcdc4c;
-            border-radius: 50%;
-            box-shadow: 0 0 30px #fcdc4c, 0 0 60px #fcdc4c;
-            position: absolute;
-        }
-        .black-hole {
-            width: 40px;
-            height: 40px;
-            background-color: #000;
-            border-radius: 50%;
-            box-shadow: 0 0 20px #8a00c2, 0 0 30px #c2008b;
-            position: absolute;
-            border: 2px solid #333;
-        }
-
-        /* === Planet and Orbit Styles (No Change) === */
-        .orbit {
-            position: absolute;
-            border-radius: 50%;
-            top: 50%;
-            left: 50%;
-            animation: spin linear infinite;
-        }
-        .planet {
-            position: absolute;
-            border-radius: 50%;
-            left: 50%;
-            transform: translateX(-50%);
-        }
-        @keyframes spin {
-            from {
-                transform: translate(-50%, -50%) rotate(0deg);
-            }
-            to {
-                transform: translate(-50%, -50%) rotate(360deg);
-            }
-        }
-
-        /* === UI Form Styles (No Change) === */
         fieldset {
             border: 1px solid #555;
             border-radius: 4px;
             display: flex;
             flex-direction: column;
             gap: 8px;
-        }
-        /* Add a little space if there are two fieldsets in one panel */
-        fieldset:not(:last-child) {
             margin-bottom: 15px;
         }
         legend {
@@ -127,7 +130,7 @@
             border: 1px solid #777;
             background-color: #333;
             color: white;
-            width: 95%; /* Make inputs fill the panel */
+            width: 95%;
         }
         button {
             cursor: pointer;
@@ -142,151 +145,370 @@
 </head>
 <body>
 
-    <h1>Galaxy Simulator</h1>
+    <h1>Physics Galaxy Simulator</h1>
 
     <div class="main-layout-container">
 
         <div class="controls-panel-left">
             <fieldset>
+                <legend>Tools</legend>
+                <div class="tools">
+                    <button class="tool-btn active" id="tool-select" title="Select / Move">👆</button>
+                    <button class="tool-btn" id="tool-pan" title="Pan View">✋</button>
+                    <button class="tool-btn" id="tool-picker" title="Picker / Duplicate">🧪</button>
+                </div>
+            </fieldset>
+
+            <fieldset>
                 <legend>Add Celestial Body</legend>
                 <select id="body-type">
-                    <option value="star">Star (Central Body)</option>
-                    <option value="black-hole">Black Hole (Central Body)</option>
+                    <option value="star">Star</option>
+                    <option value="black-hole">Black Hole</option>
                     <option value="planet">Planet</option>
                 </select>
-                <input type="text" id="body-name" placeholder="Name">
-                <input type="number" id="body-size" placeholder="Size (px)">
+                <input type="number" id="body-mass" placeholder="Mass (e.g., Star: 1000)">
+                <input type="number" id="body-size" placeholder="Size (px, e.g., 20)">
                 <input type="text" id="body-color" placeholder="Color (e.g., #ff0000)">
-                <input type="number" id="orbit-size" placeholder="Orbit Size (px)">
-                <input type="number" id="orbit-duration" placeholder="Orbit Speed (sec)">
+                <input type="number" id="orbit-distance" placeholder="Orbit Distance (px)">
                 <button id="add-body-btn">Add Body</button>
             </fieldset>
         </div>
 
         <div class="solar-system-container">
-            </div>
+            <div id="universe">
+                </div>
+        </div>
 
         <div class="controls-panel-right">
             <fieldset>
                 <legend>Manage Galaxies</legend>
                 <input type="text" id="galaxy-name" placeholder="Galaxy Name">
                 <button id="save-galaxy-btn">Save</button>
-                <br>
                 <select id="load-galaxy-menu"></select>
                 <button id="load-galaxy-btn">Load</button>
                 <button id="clear-galaxy-btn">Clear All</button>
             </fieldset>
+            
+            <fieldset id="selection-info" style="display: none;">
+                <legend>Selection Info</legend>
+                <div id="selection-name"></div>
+                <button id="delete-btn" style="background-color: #c1440e;">Delete Body</button>
+            </fieldset>
         </div>
 
     </div> <script>
-        // Good news! The JavaScript logic is exactly the same
-        // because we are still using the same element IDs.
-
         document.addEventListener('DOMContentLoaded', () => {
 
-            // Get all our DOM elements
+            // === 1. GET ALL DOM ELEMENTS ===
             const container = document.querySelector('.solar-system-container');
+            const universe = document.getElementById('universe');
+
+            // --- Tool Buttons ---
+            const toolSelectBtn = document.getElementById('tool-select');
+            const toolPanBtn = document.getElementById('tool-pan');
+            const toolPickerBtn = document.getElementById('tool-picker');
+
+            // --- Add Body Form ---
             const addBodyBtn = document.getElementById('add-body-btn');
+            
+            // --- Save/Load Form ---
             const saveGalaxyBtn = document.getElementById('save-galaxy-btn');
             const loadGalaxyBtn = document.getElementById('load-galaxy-btn');
             const clearGalaxyBtn = document.getElementById('clear-galaxy-btn');
             const loadGalaxyMenu = document.getElementById('load-galaxy-menu');
 
-            // === 1. The Core "State" Object ===
-            let currentGalaxy = {
-                centralBody: null,
-                planets: []
-            };
+            // --- Selection Panel (for Part 2) ---
+            const selectionInfoPanel = document.getElementById('selection-info');
+            const selectionName = document.getElementById('selection-name');
+            const deleteBtn = document.getElementById('delete-btn');
 
-            // === 2. The Main Render Function ===
-            function renderGalaxy() {
-                container.innerHTML = '';
-                if (currentGalaxy.centralBody) {
-                    const body = currentGalaxy.centralBody;
-                    const bodyEl = document.createElement('div');
-                    bodyEl.classList.add(body.type);
-                    bodyEl.style.width = `${body.size}px`;
-                    bodyEl.style.height = `${body.size}px`;
-                    if (body.type === 'star') {
-                        bodyEl.style.backgroundColor = body.color;
-                        bodyEl.style.boxShadow = `0 0 30px ${body.color}, 0 0 60px ${body.color}`;
-                    }
-                    container.appendChild(bodyEl);
-                }
-                currentGalaxy.planets.forEach(planet => {
-                    const orbit = document.createElement('div');
-                    orbit.classList.add('orbit');
-                    orbit.style.width = `${planet.orbitSize}px`;
-                    orbit.style.height = `${planet.orbitSize}px`;
-                    orbit.style.animationDuration = `${planet.orbitDuration}s`;
-                    const planetEl = document.createElement('div');
-                    planetEl.classList.add('planet');
-                    planetEl.style.width = `${planet.planetSize}px`;
-                    planetEl.style.height = `${planet.planetSize}px`;
-                    planetEl.style.backgroundColor = planet.color;
-                    planetEl.style.top = `-${planet.planetSize / 2}px`;
-                    orbit.appendChild(planetEl);
-                    container.appendChild(orbit);
-                });
+
+            // === 2. CORE SIMULATION STATE ===
+            let currentTool = 'select'; // 'select', 'pan', 'picker'
+            let isMouseDown = false;
+            
+            // Viewport/Camera state for panning
+            let viewport = { x: 0, y: 0 };
+            
+            // Physics constant
+            const G = 1; // Gravitational constant. Tweak this!
+            
+            // Our galaxy "state". Now includes physics data!
+            let currentGalaxy = {
+                // Central body is now just the first body in the array
+                // with high mass and isStatic = true.
+                bodies: []
+            };
+            
+            // Map to store HTML elements for each body
+            let bodyElements = new Map();
+
+
+            // === 3. THE PHYSICS & RENDER "GAME LOOP" ===
+            
+            /**
+             * This is the main loop. It runs 60x per second.
+             * It updates physics AND renders the screen.
+             */
+            function simulationLoop() {
+                // 1. Update Physics
+                updatePhysics();
+                
+                // 2. Render Screen
+                renderGalaxy();
+                
+                // 3. Loop
+                requestAnimationFrame(simulationLoop);
             }
 
-            // === 3. UI Event Listeners ===
+            /**
+             * Calculates all forces and updates object positions.
+             */
+            function updatePhysics() {
+                // Loop through each body to calculate forces
+                for (let i = 0; i < currentGalaxy.bodies.length; i++) {
+                    const bodyA = currentGalaxy.bodies[i];
+                    
+                    // Reset forces for this frame
+                    bodyA.fx = 0;
+                    bodyA.fy = 0;
+
+                    // Calculate force from every *other* body
+                    for (let j = 0; j < currentGalaxy.bodies.length; j++) {
+                        if (i === j) continue; // Don't attract yourself
+                        
+                        const bodyB = currentGalaxy.bodies[j];
+                        
+                        const dx = bodyB.x - bodyA.x;
+                        const dy = bodyB.y - bodyA.y;
+                        const distSq = dx * dx + dy * dy;
+                        const dist = Math.sqrt(distSq);
+                        
+                        // F = G * (m1 * m2) / r^2
+                        const force = (G * bodyA.mass * bodyB.mass) / distSq;
+                        
+                        // Add to total force
+                        bodyA.fx += (force * dx) / dist;
+                        bodyA.fy += (force * dy) / dist;
+                    }
+                }
+
+                // Now apply forces and check for black hole collisions
+                let bodiesToDelete = [];
+                const centralBody = currentGalaxy.bodies[0]; // Assume first body is the main one
+
+                for (let i = 0; i < currentGalaxy.bodies.length; i++) {
+                    const body = currentGalaxy.bodies[i];
+
+                    // If it's static, it doesn't move.
+                    if (body.isStatic) continue;
+
+                    // --- Black Hole Physics ---
+                    // Check if it's too close to a black hole
+                    if (centralBody && centralBody.type === 'black-hole') {
+                        const dx = centralBody.x - body.x;
+                        const dy = centralBody.y - body.y;
+                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        
+                        // If inside the black hole's "size", mark for deletion
+                        if (dist < (centralBody.size / 2)) {
+                            bodiesToDelete.push(body.id);
+                            continue; // Stop processing this deleted body
+                        }
+                    }
+
+                    // --- Apply Physics (Newton's Laws) ---
+                    // a = F / m
+                    const ax = body.fx / body.mass;
+                    const ay = body.fy / body.mass;
+                    
+                    // v = v_initial + a * t (we'll assume t=1 frame)
+                    body.vx += ax;
+                    body.vy += ay;
+                    
+                    // p = p_initial + v * t
+                    body.x += body.vx;
+                    body.y += body.vy;
+                }
+                
+                // --- Deletion Step ---
+                // Safely delete bodies marked for deletion
+                if (bodiesToDelete.length > 0) {
+                    currentGalaxy.bodies = currentGalaxy.bodies.filter(body => {
+                        const shouldDelete = bodiesToDelete.includes(body.id);
+                        if (shouldDelete) {
+                            // Also remove the HTML element
+                            const el = bodyElements.get(body.id);
+                            if (el) el.remove();
+                            bodyElements.delete(body.id);
+                        }
+                        return !shouldDelete;
+                    });
+                }
+            }
+
+
+            /**
+             * Renders all bodies based on the currentGalaxy state.
+             */
+            function renderGalaxy() {
+                // 1. Pan the universe
+                // We offset the *entire* universe div.
+                // 300, 300 is the center of the 600x600 container.
+                const viewX = -viewport.x + 300;
+                const viewY = -viewport.y + 300;
+                universe.style.transform = `translate(${viewX}px, ${viewY}px)`;
+                
+                // 2. Render all bodies
+                for (const body of currentGalaxy.bodies) {
+                    let el = bodyElements.get(body.id);
+                    
+                    // If element doesn't exist, create it
+                    if (!el) {
+                        el = document.createElement('div');
+                        el.className = 'celestial-body ' + body.type;
+                        el.style.width = `${body.size}px`;
+                        el.style.height = `${body.size}px`;
+                        el.style.backgroundColor = body.color; // Set color
+                        bodyElements.set(body.id, el);
+                        universe.appendChild(el);
+                    }
+                    
+                    // --- Gravity Indicator ---
+                    // This is your gravitational pull visual!
+                    // We'll use a box-shadow that gets stronger
+                    // as it gets closer to the central body.
+                    let shadowOpacity = 0.2;
+                    if (currentGalaxy.bodies.length > 0 && !body.isStatic) {
+                        const centralBody = currentGalaxy.bodies[0];
+                        const dx = centralBody.x - body.x;
+                        const dy = centralBody.y - body.y;
+                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        
+                        // Closer = more opaque shadow. Tweak these numbers!
+                        shadowOpacity = Math.min(1, 100 / dist);
+                    }
+                    
+                    // For black holes, use their own color glow
+                    let shadowColor = body.type === 'black-hole' ? '#8a00c2' : body.color;
+                    
+                    el.style.boxShadow = `0 0 ${body.size * 2}px rgba(255, 255, 255, ${shadowOpacity})`;
+                    
+                    // Update position
+                    // We offset by half its size to center it
+                    const elX = body.x - (body.size / 2);
+                    const elY = body.y - (body.size / 2);
+                    el.style.transform = `translate(${elX}px, ${elY}px)`;
+                }
+            }
+            
+            
+            // === 4. UI EVENT LISTENERS ===
+            
+            // --- Tool Selection ---
+            function setActiveTool(tool) {
+                currentTool = tool;
+                // Remove 'active' from all
+                toolSelectBtn.classList.remove('active');
+                toolPanBtn.classList.remove('active');
+                toolPickerBtn.classList.remove('active');
+                // Add 'active' to the clicked one
+                document.getElementById(`tool-${tool}`).classList.add('active');
+            }
+            toolSelectBtn.onclick = () => setActiveTool('select');
+            toolPanBtn.onclick = () => setActiveTool('pan');
+            toolPickerBtn.onclick = () => setActiveTool('picker');
+
+            // --- Add a New Body ---
             addBodyBtn.addEventListener('click', () => {
                 const type = document.getElementById('body-type').value;
-                const size = document.getElementById('body-size').value;
-                const color = document.getElementById('body-color').value;
+                const mass = parseFloat(document.getElementById('body-mass').value) || 10;
+                const size = parseFloat(document.getElementById('body-size').value) || 10;
+                const color = document.getElementById('body-color').value || '#ffffff';
+                const orbitDist = parseFloat(document.getElementById('orbit-distance').value) || 100;
 
-                if (type === 'planet') {
-                    const planetData = {
-                        name: document.getElementById('body-name').value,
-                        planetSize: parseInt(size) || 10,
-                        color: color || '#ffffff',
-                        orbitSize: parseInt(document.getElementById('orbit-size').value) || 100,
-                        orbitDuration: parseInt(document.getElementById('orbit-duration').value) || 10
-                    };
-                    currentGalaxy.planets.push(planetData);
+                let newBody = {
+                    id: Date.now(), // Unique ID
+                    type: type,
+                    mass: mass,
+                    size: size,
+                    color: color,
+                    x: 0, y: 0, // Position
+                    vx: 0, vy: 0, // Velocity
+                    fx: 0, fy: 0, // Force
+                    isStatic: false
+                };
+
+                // If it's the *first* body, make it static and put it at 0,0
+                if (currentGalaxy.bodies.length === 0) {
+                    newBody.isStatic = true;
+                    // Position is 0,0 (relative to universe, not screen)
                 } else {
-                    currentGalaxy.centralBody = {
-                        type: type,
-                        name: document.getElementById('body-name').value,
-                        size: parseInt(size) || 50,
-                        color: color || '#fcdc4c'
-                    };
+                    // It's a planet. Give it an orbit.
+                    const centralBody = currentGalaxy.bodies[0];
+                    
+                    // Position it
+                    newBody.x = centralBody.x + orbitDist;
+                    newBody.y = centralBody.y;
+                    
+                    // Give it an initial velocity for a circular orbit
+                    // v = sqrt(G * M_central / r)
+                    const v = Math.sqrt((G * centralBody.mass) / orbitDist);
+                    newBody.vy = -v; // Move "up" to orbit counter-clockwise
                 }
-                renderGalaxy();
+                
+                currentGalaxy.bodies.push(newBody);
+                // The render loop will automatically find and draw it.
             });
 
+            // --- Save/Load Functions (Mostly Unchanged) ---
             saveGalaxyBtn.addEventListener('click', () => {
                 const galaxyName = document.getElementById('galaxy-name').value;
-                if (!galaxyName) {
-                    alert('Please enter a name for your galaxy!');
-                    return;
-                }
-                localStorage.setItem(galaxyName, JSON.stringify(currentGalaxy));
+                if (!galaxyName) return alert('Please enter a name!');
+                
+                // We now save the 'bodies' array and the 'viewport'
+                const saveData = {
+                    bodies: currentGalaxy.bodies,
+                    viewport: viewport
+                };
+                localStorage.setItem(galaxyName, JSON.stringify(saveData));
+                
                 alert(`Galaxy "${galaxyName}" saved!`);
                 populateLoadMenu();
             });
 
             loadGalaxyBtn.addEventListener('click', () => {
                 const galaxyName = loadGalaxyMenu.value;
-                if (!galaxyName) {
-                    alert('Please select a galaxy to load.');
-                    return;
-                }
-                const savedData = localStorage.getItem(galaxyName);
-                currentGalaxy = JSON.parse(savedData);
-                renderGalaxy();
+                if (!galaxyName) return alert('Please select a galaxy.');
+                
+                const savedData = JSON.parse(localStorage.getItem(galaxyName));
+                
+                // Clear existing galaxy
+                clearAll(); 
+                
+                // Load new data
+                currentGalaxy.bodies = savedData.bodies;
+                viewport = savedData.viewport;
+                
                 alert(`Galaxy "${galaxyName}" loaded!`);
+                // Render loop will handle drawing
             });
 
             clearGalaxyBtn.addEventListener('click', () => {
                 if (confirm('Are you sure you want to clear the current galaxy?')) {
-                    currentGalaxy = { centralBody: null, planets: [] };
-                    renderGalaxy();
+                    clearAll();
                 }
             });
 
-            // === 4. Utility Functions ===
+            function clearAll() {
+                currentGalaxy.bodies = [];
+                // Remove all HTML elements
+                universe.innerHTML = '';
+                bodyElements.clear();
+                // Reset viewport
+                viewport = { x: 0, y: 0 };
+            }
+
             function populateLoadMenu() {
                 loadGalaxyMenu.innerHTML = '';
                 for (let i = 0; i < localStorage.length; i++) {
@@ -297,8 +519,10 @@
                     loadGalaxyMenu.appendChild(option);
                 }
             }
+
+            // === 5. START THE SIMULATOR ===
             populateLoadMenu();
-            renderGalaxy();
+            requestAnimationFrame(simulationLoop); // Start the game loop!
         });
     </script>
 
