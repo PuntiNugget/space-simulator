@@ -72,7 +72,6 @@
         .celestial-body {
             position: absolute;
             border-radius: 50%;
-            /* Cyan border for selection is now handled in JS */
         }
 
         .star {
@@ -125,10 +124,9 @@
             color: white;
             width: 95%;
         }
-        /* Fix width for inputs inside a label */
         label > input {
             width: 100%;
-            box-sizing: border-box; /* Fixes padding issue */
+            box-sizing: border-box;
         }
         button {
             cursor: pointer;
@@ -138,6 +136,24 @@
         }
         button:hover {
             background-color: #fff;
+        }
+        
+        /* ** NEW: Sim Control Styles ** */
+        .sim-controls {
+            display: flex;
+            flex-direction: row;
+            justify-content: space-around;
+            align-items: center;
+        }
+        .sim-controls button {
+            width: 50px;
+            font-size: 1.2em;
+        }
+        .sim-controls span {
+            width: 100px;
+            text-align: center;
+            color: #fcdc4c;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -187,6 +203,17 @@
         </div>
 
         <div class="controls-panel-right">
+
+            <fieldset>
+                <legend>Simulation Control</legend>
+                <div class="sim-controls">
+                    <button id="slow-down-btn" title="Slow Down">&lt;&lt;</button>
+                    <button id="pause-btn" title="Pause">❚❚</button>
+                    <button id="speed-up-btn" title="Speed Up">&gt;&gt;</button>
+                    <span id="speed-display">Speed: 1.0x</span>
+                </div>
+            </fieldset>
+
             <fieldset>
                 <legend>Manage Galaxies</legend>
                 <input type="text" id="galaxy-name" placeholder="Galaxy Name">
@@ -235,6 +262,12 @@
             const selectionInfoPanel = document.getElementById('selection-info');
             const selectionName = document.getElementById('selection-name');
             const deleteBtn = document.getElementById('delete-btn');
+            
+            // ** NEW: Sim Control Elements **
+            const slowDownBtn = document.getElementById('slow-down-btn');
+            const pauseBtn = document.getElementById('pause-btn');
+            const speedUpBtn = document.getElementById('speed-up-btn');
+            const speedDisplay = document.getElementById('speed-display');
 
 
             // === 2. CORE SIMULATION STATE ===
@@ -249,15 +282,23 @@
             
             let bodyElements = new Map();
             let selectedBody = null;
-            
-            // ** NEW ** State for dragging and panning
             let isDraggingBody = false;
             let lastMousePos = { x: 0, y: 0 };
+            
+            // ** NEW: Sim Control State **
+            let isPaused = false;
+            let timeScale = 1.0;
+            const timeScaleStep = 0.25; // How much to speed up/slow down
 
 
             // === 3. THE PHYSICS & RENDER "GAME LOOP" ===
             
             function simulationLoop() {
+                // ** UPDATED: Check for pause **
+                if (isPaused) {
+                    return; // Stop the loop if paused
+                }
+                
                 updatePhysics();
                 renderGalaxy();
                 requestAnimationFrame(simulationLoop);
@@ -287,22 +328,22 @@
 
                 // Phase 2: Apply physics (move bodies)
                 for (const body of currentGalaxy.bodies) {
-                    // ** Don't apply physics to static or dragged bodies **
                     if (body.isStatic || (isDraggingBody && selectedBody && body.id === selectedBody.id)) {
                         continue;
                     }
                     
                     const ax = body.fx / body.mass;
                     const ay = body.fy / body.mass;
-                    body.vx += ax;
-                    body.vy += ay;
-                    body.x += body.vx;
-                    body.y += body.vy;
+                    
+                    // ** UPDATED: Apply timeScale to physics **
+                    body.vx += ax * timeScale;
+                    body.vy += ay * timeScale;
+                    body.x += body.vx * timeScale;
+                    body.y += body.vy * timeScale;
                 }
 
                 // Phase 3: Collision Detection & Resolution
                 const bodiesToDestroy = new Set();
-                // Priority: Stars (2) > Planets (1)
                 const bodyPriority = { 'star': 2, 'planet': 1 };
 
                 for (let i = 0; i < currentGalaxy.bodies.length; i++) {
@@ -325,13 +366,12 @@
                             let survivor, victim;
                             
                             if (pA > pB) {
-                                survivor = bodyA; // A eats B (e.g., Star eats Planet)
+                                survivor = bodyA; 
                                 victim = bodyB;
                             } else if (pB > pA) {
-                                survivor = bodyB; // B eats A
+                                survivor = bodyB;
                                 victim = bodyA;
                             } else {
-                                // Same type, bigger mass wins
                                 survivor = (bodyA.mass > bodyB.mass) ? bodyA : bodyB;
                                 victim = (bodyA.mass > bodyB.mass) ? bodyB : bodyA;
                             }
@@ -359,28 +399,15 @@
                 }
             }
             
-            /**
-             * Helper function to merge two bodies.
-             */
             function mergeBodies(survivor, victim, bodiesToDestroy) {
                 const newMass = survivor.mass + victim.mass;
-                
-                // Conserve momentum
                 survivor.vx = ((survivor.mass * survivor.vx) + (victim.mass * victim.vx)) / newMass;
                 survivor.vy = ((survivor.mass * survivor.vy) + (victim.mass * victim.vy)) / newMass;
-                
                 survivor.mass = newMass;
-                
-                // Combine area (newR^2 = r1^2 + r2^2)
                 survivor.size = Math.sqrt(Math.pow(survivor.size, 2) + Math.pow(victim.size, 2));
-
                 bodiesToDestroy.add(victim.id);
             }
 
-
-            /**
-             * Renders all bodies (Indicator based on *OWN MASS*)
-             */
             function renderGalaxy() {
                 const viewX = -viewport.x + 300;
                 const viewY = -viewport.y + 300;
@@ -420,7 +447,6 @@
                     const elY = body.y - (body.size / 2);
                     el.style.transform = `translate(${elX}px, ${elY}px)`;
 
-                    // Add a highlight if it's the selected body
                     if (selectedBody && selectedBody.id === body.id) {
                         el.style.border = '2px solid cyan';
                     } else {
@@ -440,7 +466,6 @@
                 toolPickerBtn.classList.remove('active');
                 document.getElementById(`tool-${tool}`).classList.add('active');
                 
-                // ** NEW: Change cursor based on tool **
                 if (tool === 'pan') {
                     container.style.cursor = 'grab';
                 } else {
@@ -595,18 +620,12 @@
             }
 
             
-            // === 5. ** NEW MOUSE CONTROLS FOR ALL TOOLS ** ===
+            // === 5. MOUSE CONTROLS (with Pan/Drag/Picker) ===
             
-            /**
-             * Converts a mouse click on the screen to a coordinate
-             * inside the pannable universe.
-             */
             function getUniverseCoords(e) {
                 const rect = container.getBoundingClientRect();
                 const screenX = e.clientX - rect.left;
                 const screenY = e.clientY - rect.top;
-                
-                // 300, 300 is the center of the 600x600 container
                 const universeX = (screenX - 300) + viewport.x;
                 const universeY = (screenY - 300) + viewport.y;
                 return { x: universeX, y: universeY };
@@ -622,7 +641,6 @@
                     selectBody(clickedBody);
                     if (clickedBody) {
                         isDraggingBody = true;
-                        // Temporarily stop physics while dragging
                         clickedBody.vx = 0;
                         clickedBody.vy = 0;
                     }
@@ -631,34 +649,29 @@
                 } else if (currentTool === 'picker') {
                     const clickedBody = findBodyAt(coords.x, coords.y);
                     if (clickedBody) {
-                        // Create a deep copy
                         const newBody = JSON.parse(JSON.stringify(clickedBody));
-                        newBody.id = Date.now(); // Give it a new unique ID
-                        // Offset it so it's not on top of the original
+                        newBody.id = Date.now(); 
                         newBody.x += newBody.size; 
-                        newBody.isStatic = false; // New bodies are never static
+                        newBody.isStatic = false; 
                         currentGalaxy.bodies.push(newBody);
                     }
                 }
             });
             
             container.addEventListener('mousemove', (e) => {
-                if (!isMouseDown) return; // Only run if mouse is down
+                if (!isMouseDown) return;
 
                 const newMousePos = { x: e.clientX, y: e.clientY };
                 const deltaX = newMousePos.x - lastMousePos.x;
                 const deltaY = newMousePos.y - lastMousePos.y;
                 
                 if (currentTool === 'pan') {
-                    // Pan the viewport
                     viewport.x -= deltaX;
                     viewport.y -= deltaY;
                 } else if (currentTool === 'select' && isDraggingBody && selectedBody) {
-                    // Drag the selected body
                     const coords = getUniverseCoords(e);
                     selectedBody.x = coords.x;
                     selectedBody.y = coords.y;
-                    // Keep velocity at 0
                     selectedBody.vx = 0;
                     selectedBody.vy = 0;
                 }
@@ -668,13 +681,10 @@
             
             container.addEventListener('mouseup', () => {
                 isMouseDown = false;
-                
                 if (currentTool === 'pan') {
                     container.style.cursor = 'grab';
                 }
-                
                 if (isDraggingBody) {
-                    // Let physics take over again
                     isDraggingBody = false;
                 }
             });
@@ -686,6 +696,41 @@
                     container.style.cursor = 'grab';
                 }
             });
+            
+            
+            // ** NEW: Simulation Control Listeners **
+            
+            pauseBtn.addEventListener('click', () => {
+                isPaused = !isPaused; // Toggle the pause state
+                if (isPaused) {
+                    pauseBtn.innerHTML = '►'; // Show 'Play' icon
+                    pauseBtn.title = 'Resume';
+                } else {
+                    pauseBtn.innerHTML = '❚❚'; // Show 'Pause' icon
+                    pauseBtn.title = 'Pause';
+                    // ** IMPORTANT: Restart the loop! **
+                    requestAnimationFrame(simulationLoop);
+                }
+            });
+            
+            speedUpBtn.addEventListener('click', () => {
+                timeScale += timeScaleStep;
+                updateSpeedDisplay();
+            });
+            
+            slowDownBtn.addEventListener('click', () => {
+                // Don't go below 0, 0.25 is a good minimum
+                if (timeScale > timeScaleStep) { 
+                    timeScale -= timeScaleStep;
+                } else {
+                    timeScale = timeScaleStep; // Set to min
+                }
+                updateSpeedDisplay();
+            });
+            
+            function updateSpeedDisplay() {
+                speedDisplay.textContent = `Speed: ${timeScale.toFixed(2)}x`;
+            }
 
 
             // === 6. START THE SIMULATOR ===
