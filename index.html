@@ -351,6 +351,9 @@
             /**
              * Renders all bodies based on the currentGalaxy state.
              */
+            /**
+             * Renders all bodies based on the currentGalaxy state.
+             */
             function renderGalaxy() {
                 // 1. Pan the universe
                 // We offset the *entire* universe div.
@@ -374,25 +377,42 @@
                         universe.appendChild(el);
                     }
                     
-                    // --- Gravity Indicator ---
-                    // This is your gravitational pull visual!
-                    // We'll use a box-shadow that gets stronger
-                    // as it gets closer to the central body.
-                    let shadowOpacity = 0.2;
+                    // --- !! NEW Gravity Indicator !! ---
+                    // This is your new, more visible gravitational pull visual!
+                    
+                    let shadowRgb = '255, 255, 255'; // Default to a white glow
+                    let shadowOpacity = 0.1;        // Default faint glow
+                    let shadowBlur = 10;            // Default blur in px
+
                     if (currentGalaxy.bodies.length > 0 && !body.isStatic) {
                         const centralBody = currentGalaxy.bodies[0];
                         const dx = centralBody.x - body.x;
                         const dy = centralBody.y - body.y;
-                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy)); // Use max(1) to avoid dividing by zero
+
+                        // Set the glow color based on the central body
+                        if (centralBody.type === 'black-hole') {
+                            shadowRgb = '138, 0, 194'; // Purple glow (from #8a00c2)
+                        } else if (centralBody.type === 'star') {
+                            shadowRgb = '255, 255, 255'; // Bright white glow for stars
+                        }
+
+                        // Calculate opacity based on distance.
+                        // Closer = more opaque. I've increased '250' (from 100)
+                        // to make it much stronger.
+                        shadowOpacity = Math.min(0.9, 250 / dist); 
                         
-                        // Closer = more opaque shadow. Tweak these numbers!
-                        shadowOpacity = Math.min(1, 100 / dist);
+                        // Calculate blur based on distance.
+                        // Closer = larger blur. I've increased '400' (from 100)
+                        // to make the effect much larger.
+                        shadowBlur = Math.min(50, 400 / dist); 
                     }
-                    
-                    // For black holes, use their own color glow
-                    let shadowColor = body.type === 'black-hole' ? '#8a00c2' : body.color;
-                    
-                    el.style.boxShadow = `0 0 ${body.size * 2}px rgba(255, 255, 255, ${shadowOpacity})`;
+
+                    // Apply the new, more visible shadow
+                    // This creates a glow with [Blur] and [Spread]
+                    // The glow color is now correct (white or purple) and
+                    // the opacity and size are much stronger.
+                    el.style.boxShadow = `0 0 ${shadowBlur}px ${body.size / 4}px rgba(${shadowRgb}, ${shadowOpacity})`;
                     
                     // Update position
                     // We offset by half its size to center it
@@ -401,7 +421,6 @@
                     el.style.transform = `translate(${elX}px, ${elY}px)`;
                 }
             }
-            
             
             // === 4. UI EVENT LISTENERS ===
             
