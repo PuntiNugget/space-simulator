@@ -138,7 +138,7 @@
             background-color: #fff;
         }
         
-        /* ** NEW: Sim Control Styles ** */
+        /* Sim Control Styles */
         .sim-controls {
             display: flex;
             flex-direction: row;
@@ -236,13 +236,9 @@
             // === 1. GET ALL DOM ELEMENTS ===
             const container = document.querySelector('.solar-system-container');
             const universe = document.getElementById('universe');
-
-            // --- Tool Buttons ---
             const toolSelectBtn = document.getElementById('tool-select');
             const toolPanBtn = document.getElementById('tool-pan');
             const toolPickerBtn = document.getElementById('tool-picker');
-
-            // --- Add Body Form ---
             const addBodyBtn = document.getElementById('add-body-btn');
             const bodyTypeSelect = document.getElementById('body-type');
             const bodyMassInput = document.getElementById('body-mass');
@@ -251,19 +247,13 @@
             const orbitDistInput = document.getElementById('orbit-distance');
             const colorField = document.getElementById('color-field');
             const orbitField = document.getElementById('orbit-field');
-            
-            // --- Save/Load Form ---
             const saveGalaxyBtn = document.getElementById('save-galaxy-btn');
             const loadGalaxyBtn = document.getElementById('load-galaxy-btn');
             const clearGalaxyBtn = document.getElementById('clear-galaxy-btn');
             const loadGalaxyMenu = document.getElementById('load-galaxy-menu');
-
-            // --- Selection Panel ---
             const selectionInfoPanel = document.getElementById('selection-info');
             const selectionName = document.getElementById('selection-name');
             const deleteBtn = document.getElementById('delete-btn');
-            
-            // ** NEW: Sim Control Elements **
             const slowDownBtn = document.getElementById('slow-down-btn');
             const pauseBtn = document.getElementById('pause-btn');
             const speedUpBtn = document.getElementById('speed-up-btn');
@@ -276,6 +266,9 @@
             let viewport = { x: 0, y: 0 };
             const G = 1; // Gravitational constant
             
+            // ** NEW: Mass threshold for a planet to become a star **
+            const PLANET_TO_STAR_MASS_THRESHOLD = 750;
+            
             let currentGalaxy = {
                 bodies: []
             };
@@ -285,16 +278,14 @@
             let isDraggingBody = false;
             let lastMousePos = { x: 0, y: 0 };
             
-            // ** NEW: Sim Control State **
             let isPaused = false;
             let timeScale = 1.0;
-            const timeScaleStep = 0.25; // How much to speed up/slow down
+            const timeScaleStep = 0.25;
 
 
             // === 3. THE PHYSICS & RENDER "GAME LOOP" ===
             
             function simulationLoop() {
-                // ** UPDATED: Check for pause **
                 if (isPaused) {
                     return; // Stop the loop if paused
                 }
@@ -305,7 +296,7 @@
             }
 
             /**
-             * Physics and Collision Update
+             * ** UPDATED: Physics and Collision Update **
              */
             function updatePhysics() {
                 // Phase 1: Calculate all forces
@@ -331,11 +322,8 @@
                     if (body.isStatic || (isDraggingBody && selectedBody && body.id === selectedBody.id)) {
                         continue;
                     }
-                    
                     const ax = body.fx / body.mass;
                     const ay = body.fy / body.mass;
-                    
-                    // ** UPDATED: Apply timeScale to physics **
                     body.vx += ax * timeScale;
                     body.vy += ay * timeScale;
                     body.x += body.vx * timeScale;
@@ -345,6 +333,9 @@
                 // Phase 3: Collision Detection & Resolution
                 const bodiesToDestroy = new Set();
                 const bodyPriority = { 'star': 2, 'planet': 1 };
+                
+                // ** NEW: Keep track of supernova events **
+                let supernovaEvents = [];
 
                 for (let i = 0; i < currentGalaxy.bodies.length; i++) {
                     const bodyA = currentGalaxy.bodies[i];
@@ -364,7 +355,6 @@
                             const pB = bodyPriority[bodyB.type];
                             
                             let survivor, victim;
-                            
                             if (pA > pB) {
                                 survivor = bodyA; 
                                 victim = bodyB;
@@ -376,7 +366,31 @@
                                 victim = (bodyA.mass > bodyB.mass) ? bodyB : bodyA;
                             }
                             
-                            mergeBodies(survivor, victim, bodiesToDestroy);
+                            // ** Pass supernovaEvents array to mergeBodies **
+                            mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
+                        }
+                    }
+                }
+                
+                // ** NEW: Phase 3.5 - Process Supernovas **
+                if (supernovaEvents.length > 0) {
+                    for (const novaStar of supernovaEvents) {
+                        // Calculate the blast radius (based on its new size/mass indicator)
+                        const blastDiameter = (novaStar.size * 1.5) + (novaStar.mass / 20);
+                        const blastRadius = blastDiameter / 2;
+                        
+                        // Find all planets within the blast radius
+                        for (const body of currentGalaxy.bodies) {
+                            // Supernovas only destroy planets
+                            if (body.type === 'planet' && !bodiesToDestroy.has(body.id)) {
+                                const dx = body.x - novaStar.x;
+                                const dy = body.y - novaStar.y;
+                                const dist = Math.sqrt(dx * dx + dy * dy);
+                                
+                                if (dist <= blastRadius) {
+                                    bodiesToDestroy.add(body.id);
+                                }
+                            }
                         }
                     }
                 }
@@ -399,15 +413,36 @@
                 }
             }
             
-            function mergeBodies(survivor, victim, bodiesToDestroy) {
+            /**
+             * ** UPDATED: Helper function to merge two bodies **
+             */
+            function mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents) {
                 const newMass = survivor.mass + victim.mass;
+                
+                // Conserve momentum
                 survivor.vx = ((survivor.mass * survivor.vx) + (victim.mass * victim.vx)) / newMass;
                 survivor.vy = ((survivor.mass * survivor.vy) + (victim.mass * victim.vy)) / newMass;
+                
                 survivor.mass = newMass;
                 survivor.size = Math.sqrt(Math.pow(survivor.size, 2) + Math.pow(victim.size, 2));
+                
                 bodiesToDestroy.add(victim.id);
+                
+                // ** NEW: Check for Supernova **
+                if (survivor.type === 'star' && victim.type === 'star') {
+                    supernovaEvents.push(survivor); // Log this event
+                }
+                
+                // ** NEW: Check for Planet-to-Star Evolution **
+                if (survivor.type === 'planet' && survivor.mass >= PLANET_TO_STAR_MASS_THRESHOLD) {
+                    survivor.type = 'star';
+                    survivor.color = '#fcdc4c'; // Evolve to a yellow star
+                }
             }
 
+            /**
+             * ** UPDATED: Renders all bodies (to catch type changes) **
+             */
             function renderGalaxy() {
                 const viewX = -viewport.x + 300;
                 const viewY = -viewport.y + 300;
@@ -419,7 +454,7 @@
                     
                     if (!el) {
                         el = document.createElement('div');
-                        el.className = 'celestial-body ' + body.type;
+                        // el.className is set below
                         
                         indicatorEl = document.createElement('div');
                         indicatorEl.className = 'gravity-indicator';
@@ -431,10 +466,14 @@
                         indicatorEl = el.querySelector('.gravity-indicator');
                     }
                     
+                    // ** UPDATED: Always set class, color, and size
+                    // This catches changes from planet-to-star evolution
+                    el.className = 'celestial-body ' + body.type;
                     el.style.width = `${body.size}px`;
                     el.style.height = `${body.size}px`;
                     el.style.backgroundColor = body.color;
 
+                    // Update indicator
                     if (indicatorEl) {
                         const indicatorOpacity = Math.min(0.8, body.mass / 1500); 
                         const indicatorSize = (body.size * 1.5) + (body.mass / 20);
@@ -443,10 +482,12 @@
                         indicatorEl.style.opacity = indicatorOpacity;
                     }
                     
+                    // Update position
                     const elX = body.x - (body.size / 2);
                     const elY = body.y - (body.size / 2);
                     el.style.transform = `translate(${elX}px, ${elY}px)`;
 
+                    // Update selection border
                     if (selectedBody && selectedBody.id === body.id) {
                         el.style.border = '2px solid cyan';
                     } else {
@@ -698,7 +739,7 @@
             });
             
             
-            // ** NEW: Simulation Control Listeners **
+            // --- Simulation Control Listeners ---
             
             pauseBtn.addEventListener('click', () => {
                 isPaused = !isPaused; // Toggle the pause state
@@ -719,7 +760,6 @@
             });
             
             slowDownBtn.addEventListener('click', () => {
-                // Don't go below 0, 0.25 is a good minimum
                 if (timeScale > timeScaleStep) { 
                     timeScale -= timeScaleStep;
                 } else {
