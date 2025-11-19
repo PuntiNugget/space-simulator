@@ -47,7 +47,7 @@
             height: 100%;
         }
         
-        /* ** NEW: Slingshot SVG Overlay ** */
+        /* Slingshot SVG Overlay */
         #slingshot-svg {
             position: absolute;
             top: 0;
@@ -188,6 +188,35 @@
             color: #fcdc4c;
             font-weight: bold;
         }
+        
+        /* ** NEW: Achievement Toast Styles ** */
+        #achievement-toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #fcdc4c; /* Golden yellow */
+            color: #000;
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid #fff;
+            box-shadow: 0 0 15px #fcdc4c;
+            transform: translateX(110%); /* Off-screen */
+            transition: transform 0.4s ease-in-out;
+            z-index: 1000;
+        }
+        #achievement-toast.show {
+            transform: translateX(0);
+        }
+        #achievement-toast h3 {
+            margin: 0 0 5px 0;
+            padding: 0;
+        }
+        #achievement-toast p {
+            margin: 0;
+            padding: 0;
+            font-style: italic;
+        }
+        
     </style>
 </head>
 <body>
@@ -272,15 +301,19 @@
             </fieldset>
         </div>
 
-    </div> <script>
+    </div> <div id="achievement-toast">
+        <h3>🏆 Achievement Unlocked!</h3>
+        <p id="achievement-name"></p>
+    </div>
+
+
+    <script>
         document.addEventListener('DOMContentLoaded', () => {
 
             // === 1. GET ALL DOM ELEMENTS ===
             const container = document.querySelector('.solar-system-container');
             const universe = document.getElementById('universe');
-            // ** NEW **
             const slingshotLine = document.getElementById('slingshot-line');
-            
             const toolSelectBtn = document.getElementById('tool-select');
             const toolPanBtn = document.getElementById('tool-pan');
             const toolPickerBtn = document.getElementById('tool-picker');
@@ -305,15 +338,19 @@
             const pauseBtn = document.getElementById('pause-btn');
             const speedUpBtn = document.getElementById('speed-up-btn');
             const speedDisplay = document.getElementById('speed-display');
+            
+            // ** NEW: Achievement Elements **
+            const achievementToastEl = document.getElementById('achievement-toast');
+            const achievementNameEl = document.getElementById('achievement-name');
 
 
             // === 2. CORE SIMULATION STATE ===
             let currentTool = 'select';
             let isMouseDown = false;
             let viewport = { x: 0, y: 0 };
-            const G = 1; // Gravitational constant
+            const G = 1;
             const PLANET_TO_STAR_MASS_THRESHOLD = 750;
-            const SLINGSHOT_POWER = 0.1; // ** NEW: Power multiplier for slingshot **
+            const SLINGSHOT_POWER = 0.1;
             
             let currentGalaxy = {
                 bodies: []
@@ -321,12 +358,15 @@
             
             let bodyElements = new Map();
             let selectedBody = null;
-            let isDraggingSlingshot = false; // ** Replaced 'isDraggingBody' **
+            let isDraggingSlingshot = false;
             let lastMousePos = { x: 0, y: 0 };
             
             let isPaused = false;
             let timeScale = 1.0;
             const timeScaleStep = 0.25;
+            
+            // ** NEW: Achievement State **
+            let unlockedAchievements = new Set();
 
 
             // === 3. THE PHYSICS & RENDER "GAME LOOP" ===
@@ -341,9 +381,6 @@
                 requestAnimationFrame(simulationLoop);
             }
 
-            /**
-             * Physics and Collision Update
-             */
             function updatePhysics() {
                 const blackHoles = currentGalaxy.bodies.filter(b => b.type === 'black-hole');
                 
@@ -367,7 +404,6 @@
 
                 // Phase 2: Apply physics (move bodies)
                 for (const body of currentGalaxy.bodies) {
-                    // ** UPDATED: Don't apply physics if it's being slingshotted **
                     if (body.isStatic || (isDraggingSlingshot && selectedBody && body.id === selectedBody.id)) {
                         continue;
                     }
@@ -488,7 +524,15 @@
                 }
             }
             
+            /**
+             * ** UPDATED: mergeBodies now triggers achievements **
+             */
             function mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents) {
+                // ** ACHIEVEMENT TRIGGER: "NOM NOM" **
+                if ((survivor.type === 'star' || survivor.type === 'black-hole') && victim.type === 'planet') {
+                    unlockAchievement('nom_nom', 'NOM NOM');
+                }
+            
                 if (survivor.type === 'black-hole') {
                     survivor.isStatic = false; 
                 }
@@ -692,7 +736,6 @@
                     newBody.color = rawColor || '#3d91f0';
                     
                     if (currentGalaxy.bodies.length > 0) {
-                        // Find the most massive body to orbit
                         let centralBody = currentGalaxy.bodies[0];
                         for(let i=1; i<currentGalaxy.bodies.length; i++) {
                             if(currentGalaxy.bodies[i].mass > centralBody.mass) {
@@ -795,8 +838,36 @@
                 return null;
             }
 
+            // ** NEW: Achievement System Functions **
+            function loadAchievements() {
+                const saved = localStorage.getItem('galaxySimAchievements');
+                if (saved) {
+                    unlockedAchievements = new Set(JSON.parse(saved));
+                }
+            }
+            function saveAchievements() {
+                localStorage.setItem('galaxySimAchievements', JSON.stringify([...unlockedAchievements]));
+            }
+            function unlockAchievement(id, name) {
+                if (unlockedAchievements.has(id)) {
+                    return; // Already unlocked
+                }
+                // 1. Unlock
+                unlockedAchievements.add(id);
+                saveAchievements();
+                
+                // 2. Show Notification
+                achievementNameEl.textContent = `"${name}"`;
+                achievementToastEl.classList.add('show');
+                
+                // 3. Hide after a few seconds
+                setTimeout(() => {
+                    achievementToastEl.classList.remove('show');
+                }, 4000); // 4 seconds
+            }
+
             
-            // === 5. ** UPDATED MOUSE CONTROLS (with Slingshot) ** ===
+            // === 5. MOUSE CONTROLS (with Slingshot) ===
             
             function getUniverseCoords(e) {
                 const rect = container.getBoundingClientRect();
@@ -816,13 +887,11 @@
                     const clickedBody = findBodyAt(coords.x, coords.y);
                     selectBody(clickedBody);
                     
-                    // ** NEW: Can only slingshot non-static bodies **
                     if (clickedBody && !clickedBody.isStatic) {
                         isDraggingSlingshot = true;
-                        clickedBody.vx = 0; // Stop it
+                        clickedBody.vx = 0; 
                         clickedBody.vy = 0;
                         
-                        // Set line start to center of body (in screen coords)
                         const bodyScreenX = (clickedBody.x - viewport.x) + 300;
                         const bodyScreenY = (clickedBody.y - viewport.y) + 300;
                         slingshotLine.setAttribute('x1', bodyScreenX);
@@ -856,7 +925,6 @@
                     viewport.x -= deltaX;
                     viewport.y -= deltaY;
                 } else if (currentTool === 'select' && isDraggingSlingshot) {
-                    // ** NEW: Update slingshot line end **
                     const coords = getUniverseCoords(e);
                     slingshotLine.setAttribute('x2', coords.screenX);
                     slingshotLine.setAttribute('y2', coords.screenY);
@@ -867,14 +935,13 @@
             
             container.addEventListener('mouseup', (e) => {
                 isMouseDown = false;
-                slingshotLine.style.display = 'none'; // Hide line on any mouseup
+                slingshotLine.style.display = 'none'; 
                 
                 if (currentTool === 'pan') {
                     container.style.cursor = 'grab';
                 }
                 
                 if (isDraggingSlingshot) {
-                    // ** NEW: Launch the planet! **
                     const startX = parseFloat(slingshotLine.getAttribute('x1'));
                     const startY = parseFloat(slingshotLine.getAttribute('y1'));
                     
@@ -882,12 +949,14 @@
                     const endX = e.clientX - rect.left;
                     const endY = e.clientY - rect.top;
                     
-                    // Vector from end to start (pull back and release)
                     const vX = (startX - endX) * SLINGSHOT_POWER;
                     const vY = (startY - endY) * SLINGSHOT_POWER;
                     
                     selectedBody.vx = vX;
                     selectedBody.vy = vY;
+                    
+                    // ** ACHIEVEMENT TRIGGER: "Slingshot" **
+                    unlockAchievement('slingshot', '*wind noises or something*');
                     
                     isDraggingSlingshot = false;
                 }
@@ -896,7 +965,7 @@
             container.addEventListener('mouseleave', () => {
                 isMouseDown = false;
                 isDraggingSlingshot = false;
-                slingshotLine.style.display = 'none'; // Hide line
+                slingshotLine.style.display = 'none'; 
                 if (currentTool === 'pan') {
                     container.style.cursor = 'grab';
                 }
@@ -938,8 +1007,9 @@
 
             // === 6. START THE SIMULATOR ===
             populateLoadMenu();
-            updateAddForm(); // Set the initial form defaults
-            requestAnimationFrame(simulationLoop); // Start the game loop!
+            loadAchievements(); // ** NEW: Load saved achievements **
+            updateAddForm(); 
+            requestAnimationFrame(simulationLoop); 
         });
     </script>
 
