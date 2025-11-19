@@ -78,7 +78,6 @@
             background-color: #fcdc4c;
         }
         
-        /* ** NEW: Black Hole Style with Orange Glow ** */
         .black-hole {
             background-color: #000;
             border: 2px solid #333;
@@ -339,8 +338,9 @@
                 // Phase 3: Collision Detection & Resolution
                 const bodiesToDestroy = new Set();
                 
-                // ** UPDATED: Black hole is highest priority **
-                const bodyPriority = { 'black-hole': 3, 'star': 2, 'planet': 1 };
+                // This is your "Density Physics" logic
+                // Higher number wins collisions
+                const bodyDensityType = { 'black-hole': 3, 'star': 2, 'planet': 1 };
                 let supernovaEvents = [];
 
                 for (let i = 0; i < currentGalaxy.bodies.length; i++) {
@@ -357,27 +357,36 @@
                         const collisionDist = (bodyA.size / 2) + (bodyB.size / 2);
 
                         if (dist < collisionDist) {
-                            const pA = bodyPriority[bodyA.type];
-                            const pB = bodyPriority[bodyB.type];
+                            const pA = bodyDensityType[bodyA.type];
+                            const pB = bodyDensityType[bodyB.type];
                             
                             let survivor, victim;
+                            
+                            // ** NEW DENSITY LOGIC **
                             if (pA > pB) {
+                                // A is a higher type (e.g., Black Hole vs Star)
                                 survivor = bodyA; 
                                 victim = bodyB;
                             } else if (pB > pA) {
+                                // B is a higher type
                                 survivor = bodyB;
                                 victim = bodyA;
                             } else {
-                                survivor = (bodyA.mass > bodyB.mass) ? bodyA : bodyB;
-                                victim = (bodyA.mass > bodyB.mass) ? bodyB : bodyA;
+                                // ** SAME TYPE: Now check realistic density **
+                                // Density = Mass / Area (Area is proportional to size^2)
+                                const densityA = bodyA.mass / (bodyA.size * bodyA.size);
+                                const densityB = bodyB.mass / (bodyB.size * bodyB.size);
+                                
+                                if (densityA > densityB) {
+                                    survivor = bodyA;
+                                    victim = bodyB;
+                                } else {
+                                    survivor = bodyB;
+                                    victim = bodyA;
+                                }
                             }
                             
-                            // ** UPDATED: Black holes always win **
-                            if (victim.type === 'black-hole' && survivor.type !== 'black-hole') {
-                                mergeBodies(victim, survivor, bodiesToDestroy, supernovaEvents);
-                            } else {
-                                mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
-                            }
+                            mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
                         }
                     }
                 }
@@ -421,19 +430,24 @@
             }
             
             /**
-             * Helper function to merge two bodies
+             * ** UPDATED: Helper function to merge two bodies **
              */
             function mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents) {
-                // ** Black holes are never static after a collision **
                 if (survivor.type === 'black-hole') {
-                    survivor.isStatic = false;
+                    survivor.isStatic = false; // Black holes are never static after collision
                 }
 
                 const newMass = survivor.mass + victim.mass;
                 survivor.vx = ((survivor.mass * survivor.vx) + (victim.mass * victim.vx)) / newMass;
                 survivor.vy = ((survivor.mass * survivor.vy) + (victim.mass * victim.vy)) / newMass;
                 survivor.mass = newMass;
-                survivor.size = Math.sqrt(Math.pow(survivor.size, 2) + Math.pow(victim.size, 2));
+                
+                // ** UPDATED: Black holes absorb mass but don't grow in visual size **
+                if (survivor.type !== 'black-hole') {
+                    // Combine area (newR^2 = r1^2 + r2^2)
+                    survivor.size = Math.sqrt(Math.pow(survivor.size, 2) + Math.pow(victim.size, 2));
+                }
+                // Black holes get more massive, but not visually bigger.
                 
                 bodiesToDestroy.add(victim.id);
                 
@@ -472,13 +486,11 @@
                         indicatorEl = el.querySelector('.gravity-indicator');
                     }
                     
-                    // Always set class, color, and size
                     el.className = 'celestial-body ' + body.type;
                     el.style.width = `${body.size}px`;
                     el.style.height = `${body.size}px`;
                     el.style.backgroundColor = body.color;
 
-                    // Update indicator
                     if (indicatorEl) {
                         const indicatorOpacity = Math.min(0.8, body.mass / 1500); 
                         const indicatorSize = (body.size * 1.5) + (body.mass / 20);
@@ -487,16 +499,13 @@
                         indicatorEl.style.opacity = indicatorOpacity;
                     }
                     
-                    // Update position
                     const elX = body.x - (body.size / 2);
                     const elY = body.y - (body.size / 2);
                     el.style.transform = `translate(${elX}px, ${elY}px)`;
 
-                    // Update selection border
                     if (selectedBody && selectedBody.id === body.id) {
                         el.style.border = '2px solid cyan';
                     } else {
-                        // ** UPDATED: Reset border, but give black holes their default border **
                         el.style.border = 'none'; 
                         if (body.type === 'black-hole') {
                             el.style.border = '2px solid #333';
@@ -536,10 +545,10 @@
                     bodySizeInput.placeholder = "Size (default: 50)";
                     bodyColorInput.value = '#fcdc4c';
                 } else if (type === 'black-hole') {
-                    // ** Black hole case added **
                     colorField.style.display = 'none';
                     orbitField.style.display = 'none';
-                    bodyMassInput.placeholder = "Mass (default: 2000)";
+                    // ** UPDATED: Higher default mass **
+                    bodyMassInput.placeholder = "Mass (default: 20000)";
                     bodySizeInput.placeholder = "Size (default: 30)";
                     bodyColorInput.value = '#000000';
                 } else if (type === 'planet') {
@@ -575,8 +584,8 @@
                     newBody.color = rawColor || '#fcdc4c';
                     newBody.isStatic = (currentGalaxy.bodies.length === 0);
                 } else if (type === 'black-hole') {
-                    // ** Black hole case added **
-                    newBody.mass = parseFloat(rawMass) || 2000;
+                    // ** UPDATED: Higher default mass **
+                    newBody.mass = parseFloat(rawMass) || 20000;
                     newBody.size = parseFloat(rawSize) || 30;
                     newBody.color = '#000000';
                     newBody.isStatic = (currentGalaxy.bodies.length === 0);
