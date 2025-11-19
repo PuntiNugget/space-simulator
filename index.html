@@ -72,6 +72,8 @@
         .celestial-body {
             position: absolute;
             border-radius: 50%;
+            /* This helps center the body during rotation/spaghettification */
+            transform-origin: center center;
         }
 
         .star {
@@ -134,6 +136,17 @@
             width: 100%;
             box-sizing: border-box;
         }
+        /* ** NEW: Style for checkbox label ** */
+        label[for="body-static"] {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: white;
+        }
+        #body-static {
+            width: auto; /* Let checkbox be normal size */
+        }
+
         button {
             cursor: pointer;
             background-color: #fcdc4c;
@@ -200,6 +213,10 @@
                     <input type="number" id="orbit-distance" placeholder="e.g., 100">
                 </label>
                 
+                <label id="static-field" for="body-static" style="display: none;">
+                    <input type="checkbox" id="body-static"> Is Static (won't move)
+                </label>
+                
                 <button id="add-body-btn">Add Body</button>
             </fieldset>
         </div>
@@ -254,6 +271,10 @@
             const orbitDistInput = document.getElementById('orbit-distance');
             const colorField = document.getElementById('color-field');
             const orbitField = document.getElementById('orbit-field');
+            // ** NEW **
+            const staticField = document.getElementById('static-field');
+            const bodyStaticInput = document.getElementById('body-static');
+            
             const saveGalaxyBtn = document.getElementById('save-galaxy-btn');
             const loadGalaxyBtn = document.getElementById('load-galaxy-btn');
             const clearGalaxyBtn = document.getElementById('clear-galaxy-btn');
@@ -304,6 +325,9 @@
              * ** UPDATED: Physics and Collision Update **
              */
             function updatePhysics() {
+                // ** NEW: Get all black holes for special physics **
+                const blackHoles = currentGalaxy.bodies.filter(b => b.type === 'black-hole');
+                
                 // Phase 1: Calculate all forces
                 for (let i = 0; i < currentGalaxy.bodies.length; i++) {
                     const bodyA = currentGalaxy.bodies[i];
@@ -335,11 +359,42 @@
                     body.y += body.vy * timeScale;
                 }
 
+                // ** NEW: Phase 2.5: Black Hole Orbital Decay (Spiral) **
+                if (blackHoles.length > 0) {
+                    for (const body of currentGalaxy.bodies) {
+                        if (body.isStatic || body.type === 'black-hole') continue;
+
+                        // Find closest black hole
+                        let closestBH = null;
+                        let minDistSq = Infinity;
+                        for (const bh of blackHoles) {
+                            const dx = bh.x - body.x;
+                            const dy = bh.y - body.y;
+                            const distSq = (dx * dx + dy * dy);
+                            if (distSq < minDistSq) {
+                                minDistSq = distSq;
+                                closestBH = bh;
+                            }
+                        }
+
+                        // Calculate "pull radius" (based on mass)
+                        // This is a "gameplay" radius, not real physics
+                        const pullRadiusSq = Math.pow(closestBH.mass / 10, 2); 
+                        
+                        if (minDistSq < pullRadiusSq) {
+                            // Apply a drag force to cause orbital decay
+                            // The closer it gets, the stronger the drag
+                            const dragFactor = (pullRadiusSq - minDistSq) / pullRadiusSq; // 0 (far) to 1 (close)
+                            const decay = 1.0 - (0.005 * dragFactor * timeScale); // Max 0.5% drag per frame
+                            
+                            body.vx *= decay;
+                            body.vy *= decay;
+                        }
+                    }
+                }
+
                 // Phase 3: Collision Detection & Resolution
                 const bodiesToDestroy = new Set();
-                
-                // This is your "Density Physics" logic
-                // Higher number wins collisions
                 const bodyDensityType = { 'black-hole': 3, 'star': 2, 'planet': 1 };
                 let supernovaEvents = [];
 
@@ -362,28 +417,18 @@
                             
                             let survivor, victim;
                             
-                            // ** NEW DENSITY LOGIC **
                             if (pA > pB) {
-                                // A is a higher type (e.g., Black Hole vs Star)
                                 survivor = bodyA; 
                                 victim = bodyB;
                             } else if (pB > pA) {
-                                // B is a higher type
                                 survivor = bodyB;
                                 victim = bodyA;
                             } else {
-                                // ** SAME TYPE: Now check realistic density **
-                                // Density = Mass / Area (Area is proportional to size^2)
+                                // ** Realistic Density Check **
                                 const densityA = bodyA.mass / (bodyA.size * bodyA.size);
                                 const densityB = bodyB.mass / (bodyB.size * bodyB.size);
-                                
-                                if (densityA > densityB) {
-                                    survivor = bodyA;
-                                    victim = bodyB;
-                                } else {
-                                    survivor = bodyB;
-                                    victim = bodyA;
-                                }
+                                survivor = (densityA > densityB) ? bodyA : bodyB;
+                                victim = (densityA > densityB) ? bodyB : bodyA;
                             }
                             
                             mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
@@ -430,11 +475,11 @@
             }
             
             /**
-             * ** UPDATED: Helper function to merge two bodies **
+             * Helper function to merge two bodies
              */
             function mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents) {
                 if (survivor.type === 'black-hole') {
-                    survivor.isStatic = false; // Black holes are never static after collision
+                    survivor.isStatic = false; 
                 }
 
                 const newMass = survivor.mass + victim.mass;
@@ -442,21 +487,16 @@
                 survivor.vy = ((survivor.mass * survivor.vy) + (victim.mass * victim.vy)) / newMass;
                 survivor.mass = newMass;
                 
-                // ** UPDATED: Black holes absorb mass but don't grow in visual size **
                 if (survivor.type !== 'black-hole') {
-                    // Combine area (newR^2 = r1^2 + r2^2)
                     survivor.size = Math.sqrt(Math.pow(survivor.size, 2) + Math.pow(victim.size, 2));
                 }
-                // Black holes get more massive, but not visually bigger.
                 
                 bodiesToDestroy.add(victim.id);
                 
-                // Check for Supernova
                 if (survivor.type === 'star' && victim.type === 'star') {
                     supernovaEvents.push(survivor);
                 }
                 
-                // Check for Planet-to-Star Evolution
                 if (survivor.type === 'planet' && survivor.mass >= PLANET_TO_STAR_MASS_THRESHOLD) {
                     survivor.type = 'star';
                     survivor.color = '#fcdc4c';
@@ -464,12 +504,15 @@
             }
 
             /**
-             * Renders all bodies
+             * ** UPDATED: Renders bodies with Spaghettification **
              */
             function renderGalaxy() {
                 const viewX = -viewport.x + 300;
                 const viewY = -viewport.y + 300;
                 universe.style.transform = `translate(${viewX}px, ${viewY}px)`;
+                
+                // Get all black holes for spaghettification check
+                const blackHoles = currentGalaxy.bodies.filter(b => b.type === 'black-hole');
                 
                 for (const body of currentGalaxy.bodies) {
                     let el = bodyElements.get(body.id);
@@ -487,8 +530,6 @@
                     }
                     
                     el.className = 'celestial-body ' + body.type;
-                    el.style.width = `${body.size}px`;
-                    el.style.height = `${body.size}px`;
                     el.style.backgroundColor = body.color;
 
                     if (indicatorEl) {
@@ -499,10 +540,49 @@
                         indicatorEl.style.opacity = indicatorOpacity;
                     }
                     
+                    // --- ** NEW: Spaghettification Visuals ** ---
                     const elX = body.x - (body.size / 2);
                     const elY = body.y - (body.size / 2);
-                    el.style.transform = `translate(${elX}px, ${elY}px)`;
+                    let transform = `translate(${elX}px, ${elY}px)`; // Base transform
+                    
+                    // Reset spag styles
+                    el.style.width = `${body.size}px`;
+                    el.style.height = `${body.size}px`;
+                    el.style.borderRadius = '50%';
+            
+                    if (body.type !== 'black-hole' && blackHoles.length > 0) {
+                        // Find closest black hole
+                        let closestBH = null;
+                        let minDistSq = Infinity;
+                        for (const bh of blackHoles) {
+                            const dx = bh.x - body.x;
+                            const dy = bh.y - body.y;
+                            const distSq = (dx * dx + dy * dy);
+                            if (distSq < minDistSq) {
+                                minDistSq = distSq;
+                                closestBH = bh;
+                            }
+                        }
+                        
+                        if (closestBH) {
+                            const dist = Math.sqrt(minDistSq);
+                            const spagDist = closestBH.size * 3; // Start stretching at 3x BH size
+                            
+                            if (dist < spagDist) {
+                                const angle = Math.atan2(closestBH.y - body.y, closestBH.x - body.x);
+                                const stretch = Math.min(8, 1 + (spagDist / (dist + 1)) * 2); // Cap stretch at 8x
+                                
+                                el.style.width = `${body.size / stretch}px`;
+                                el.style.height = `${body.size * stretch}px`;
+                                el.style.borderRadius = '25%'; // Make it look "stretched"
+                                // Rotate the stretched body to point towards the black hole
+                                transform += ` rotate(${angle + Math.PI / 2}rad)`; 
+                            }
+                        }
+                    }
+                    el.style.transform = transform; // Apply the final transform
 
+                    // Update selection border
                     if (selectedBody && selectedBody.id === body.id) {
                         el.style.border = '2px solid cyan';
                     } else {
@@ -541,19 +621,22 @@
                 if (type === 'star') {
                     colorField.style.display = 'block';
                     orbitField.style.display = 'none';
+                    staticField.style.display = 'block'; // Show static toggle
                     bodyMassInput.placeholder = "Mass (default: 1000)";
                     bodySizeInput.placeholder = "Size (default: 50)";
                     bodyColorInput.value = '#fcdc4c';
                 } else if (type === 'black-hole') {
                     colorField.style.display = 'none';
                     orbitField.style.display = 'none';
-                    // ** UPDATED: Higher default mass **
+                    staticField.style.display = 'block'; // Show static toggle
                     bodyMassInput.placeholder = "Mass (default: 20000)";
                     bodySizeInput.placeholder = "Size (default: 30)";
                     bodyColorInput.value = '#000000';
                 } else if (type === 'planet') {
                     colorField.style.display = 'block';
                     orbitField.style.display = 'block';
+                    staticField.style.display = 'none'; // Hide static toggle
+                    bodyStaticInput.checked = false; // Uncheck it
                     bodyMassInput.placeholder = "Mass (default: 10)";
                     bodySizeInput.placeholder = "Size (default: 12)";
                     orbitDistInput.placeholder = "Orbit (default: 150)";
@@ -575,25 +658,22 @@
                     id: Date.now(),
                     type: type,
                     x: 0, y: 0, vx: 0, vy: 0, fx: 0, fy: 0,
-                    isStatic: false
+                    // ** NEW: Read from checkbox **
+                    isStatic: bodyStaticInput.checked
                 };
 
                 if (type === 'star') {
                     newBody.mass = parseFloat(rawMass) || 1000;
                     newBody.size = parseFloat(rawSize) || 50;
                     newBody.color = rawColor || '#fcdc4c';
-                    newBody.isStatic = (currentGalaxy.bodies.length === 0);
                 } else if (type === 'black-hole') {
-                    // ** UPDATED: Higher default mass **
                     newBody.mass = parseFloat(rawMass) || 20000;
                     newBody.size = parseFloat(rawSize) || 30;
                     newBody.color = '#000000';
-                    newBody.isStatic = (currentGalaxy.bodies.length === 0);
                 } else if (type === 'planet') {
                     newBody.mass = parseFloat(rawMass) || 10;
                     newBody.size = parseFloat(rawSize) || 12;
                     newBody.color = rawColor || '#3d91f0';
-                    newBody.isStatic = false;
                     
                     if (currentGalaxy.bodies.length > 0) {
                         const centralBody = currentGalaxy.bodies[0];
@@ -609,6 +689,7 @@
                 bodyMassInput.value = '';
                 bodySizeInput.value = '';
                 orbitDistInput.value = '';
+                bodyStaticInput.checked = false; // Reset checkbox
                 updateAddForm();
             });
 
