@@ -72,8 +72,9 @@
         .celestial-body {
             position: absolute;
             border-radius: 50%;
-            /* This helps center the body during rotation/spaghettification */
             transform-origin: center center;
+            /* ** NEW: Add transition for background color */
+            transition: background-color 0.1s linear;
         }
 
         .star {
@@ -97,9 +98,10 @@
             border-radius: 50%;
             top: 50%;
             left: 50%;
-            transform: translate(-50%, -50%);
+            /* * ** UPDATED: Removed transform and transition
+             * We will control this 100% with JavaScript for smooth wrapping
+            */
             opacity: 0;
-            transition: opacity 0.1s linear, width 0.1s linear, height 0.1s linear;
         }
 
         
@@ -136,7 +138,6 @@
             width: 100%;
             box-sizing: border-box;
         }
-        /* ** NEW: Style for checkbox label ** */
         label[for="body-static"] {
             display: flex;
             align-items: center;
@@ -271,10 +272,8 @@
             const orbitDistInput = document.getElementById('orbit-distance');
             const colorField = document.getElementById('color-field');
             const orbitField = document.getElementById('orbit-field');
-            // ** NEW **
             const staticField = document.getElementById('static-field');
             const bodyStaticInput = document.getElementById('body-static');
-            
             const saveGalaxyBtn = document.getElementById('save-galaxy-btn');
             const loadGalaxyBtn = document.getElementById('load-galaxy-btn');
             const clearGalaxyBtn = document.getElementById('clear-galaxy-btn');
@@ -322,10 +321,9 @@
             }
 
             /**
-             * ** UPDATED: Physics and Collision Update **
+             * Physics and Collision Update
              */
             function updatePhysics() {
-                // ** NEW: Get all black holes for special physics **
                 const blackHoles = currentGalaxy.bodies.filter(b => b.type === 'black-hole');
                 
                 // Phase 1: Calculate all forces
@@ -359,12 +357,11 @@
                     body.y += body.vy * timeScale;
                 }
 
-                // ** NEW: Phase 2.5: Black Hole Orbital Decay (Spiral) **
+                // Phase 2.5: Black Hole Orbital Decay (Spiral)
                 if (blackHoles.length > 0) {
                     for (const body of currentGalaxy.bodies) {
                         if (body.isStatic || body.type === 'black-hole') continue;
 
-                        // Find closest black hole
                         let closestBH = null;
                         let minDistSq = Infinity;
                         for (const bh of blackHoles) {
@@ -377,15 +374,11 @@
                             }
                         }
 
-                        // Calculate "pull radius" (based on mass)
-                        // This is a "gameplay" radius, not real physics
                         const pullRadiusSq = Math.pow(closestBH.mass / 10, 2); 
                         
                         if (minDistSq < pullRadiusSq) {
-                            // Apply a drag force to cause orbital decay
-                            // The closer it gets, the stronger the drag
-                            const dragFactor = (pullRadiusSq - minDistSq) / pullRadiusSq; // 0 (far) to 1 (close)
-                            const decay = 1.0 - (0.005 * dragFactor * timeScale); // Max 0.5% drag per frame
+                            const dragFactor = (pullRadiusSq - minDistSq) / pullRadiusSq; 
+                            const decay = 1.0 - (0.005 * dragFactor * timeScale);
                             
                             body.vx *= decay;
                             body.vy *= decay;
@@ -424,7 +417,6 @@
                                 survivor = bodyB;
                                 victim = bodyA;
                             } else {
-                                // ** Realistic Density Check **
                                 const densityA = bodyA.mass / (bodyA.size * bodyA.size);
                                 const densityB = bodyB.mass / (bodyB.size * bodyB.size);
                                 survivor = (densityA > densityB) ? bodyA : bodyB;
@@ -474,9 +466,6 @@
                 }
             }
             
-            /**
-             * Helper function to merge two bodies
-             */
             function mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents) {
                 if (survivor.type === 'black-hole') {
                     survivor.isStatic = false; 
@@ -504,14 +493,13 @@
             }
 
             /**
-             * ** UPDATED: Renders bodies with Spaghettification **
+             * ** UPDATED: Renders bodies with new Spaghettification/Wrapping **
              */
             function renderGalaxy() {
                 const viewX = -viewport.x + 300;
                 const viewY = -viewport.y + 300;
                 universe.style.transform = `translate(${viewX}px, ${viewY}px)`;
                 
-                // Get all black holes for spaghettification check
                 const blackHoles = currentGalaxy.bodies.filter(b => b.type === 'black-hole');
                 
                 for (const body of currentGalaxy.bodies) {
@@ -530,28 +518,16 @@
                     }
                     
                     el.className = 'celestial-body ' + body.type;
-                    el.style.backgroundColor = body.color;
-
-                    if (indicatorEl) {
-                        const indicatorOpacity = Math.min(0.8, body.mass / 1500); 
-                        const indicatorSize = (body.size * 1.5) + (body.mass / 20);
-                        indicatorEl.style.width = `${indicatorSize}px`;
-                        indicatorEl.style.height = `${indicatorSize}px`;
-                        indicatorEl.style.opacity = indicatorOpacity;
-                    }
                     
-                    // --- ** NEW: Spaghettification Visuals ** ---
+                    // Base transform
                     const elX = body.x - (body.size / 2);
                     const elY = body.y - (body.size / 2);
-                    let transform = `translate(${elX}px, ${elY}px)`; // Base transform
+                    let transform = `translate(${elX}px, ${elY}px)`; 
                     
-                    // Reset spag styles
-                    el.style.width = `${body.size}px`;
-                    el.style.height = `${body.size}px`;
-                    el.style.borderRadius = '50%';
-            
+                    // --- ** NEW: Spaghettification & Wrapping Visuals ** ---
+                    let isSpaghettified = false;
+                    
                     if (body.type !== 'black-hole' && blackHoles.length > 0) {
-                        // Find closest black hole
                         let closestBH = null;
                         let minDistSq = Infinity;
                         for (const bh of blackHoles) {
@@ -566,21 +542,52 @@
                         
                         if (closestBH) {
                             const dist = Math.sqrt(minDistSq);
-                            const spagDist = closestBH.size * 3; // Start stretching at 3x BH size
+                            // Start spaghettifying at 3x the black hole's size
+                            const spagDist = closestBH.size * 3; 
                             
                             if (dist < spagDist) {
+                                isSpaghettified = true;
                                 const angle = Math.atan2(closestBH.y - body.y, closestBH.x - body.x);
-                                const stretch = Math.min(8, 1 + (spagDist / (dist + 1)) * 2); // Cap stretch at 8x
                                 
-                                el.style.width = `${body.size / stretch}px`;
-                                el.style.height = `${body.size * stretch}px`;
-                                el.style.borderRadius = '25%'; // Make it look "stretched"
-                                // Rotate the stretched body to point towards the black hole
-                                transform += ` rotate(${angle + Math.PI / 2}rad)`; 
+                                // 1. Hide the main planet body
+                                el.style.backgroundColor = 'transparent';
+                                el.style.width = `${body.size}px`; // Keep original size for positioning
+                                el.style.height = `${body.size}px`;
+                                
+                                // 2. Hijack the indicator to show the "wrap"
+                                indicatorEl.style.border = 'none';
+                                indicatorEl.style.borderRadius = '50%';
+                                const arcSize = body.size * 2 + (spagDist - dist); // Arc gets bigger as it gets closer
+                                indicatorEl.style.width = `${arcSize}px`;
+                                indicatorEl.style.height = `${arcSize}px`;
+                                indicatorEl.style.opacity = '1';
+                                // Create an arc of the planet's color
+                                indicatorEl.style.borderTop = `3px solid ${body.color}`;
+                                // Rotate the arc to "trail" behind the planet
+                                indicatorEl.style.transform = `translate(-50%, -50%) rotate(${angle + Math.PI}rad)`;
                             }
                         }
                     }
-                    el.style.transform = transform; // Apply the final transform
+                    
+                    // --- ** Reset styles if NOT spaghettified ** ---
+                    if (!isSpaghettified) {
+                        // 1. Show the main planet body
+                        el.style.backgroundColor = body.color;
+                        el.style.width = `${body.size}px`;
+                        el.style.height = `${body.size}px`;
+                        
+                        // 2. Reset indicator to be a dotted gravity circle
+                        const indicatorOpacity = Math.min(0.8, body.mass / 1500); 
+                        const indicatorSize = (body.size * 1.5) + (body.mass / 20);
+                        indicatorEl.style.border = '2px dotted rgba(255, 255, 255, 0.8)';
+                        indicatorEl.style.width = `${indicatorSize}px`;
+                        indicatorEl.style.height = `${indicatorSize}px`;
+                        indicatorEl.style.opacity = indicatorOpacity;
+                        indicatorEl.style.transform = 'translate(-50%, -50%)'; // Reset rotation
+                    }
+                    
+                    // Apply final position transform
+                    el.style.transform = transform;
 
                     // Update selection border
                     if (selectedBody && selectedBody.id === body.id) {
@@ -658,7 +665,6 @@
                     id: Date.now(),
                     type: type,
                     x: 0, y: 0, vx: 0, vy: 0, fx: 0, fy: 0,
-                    // ** NEW: Read from checkbox **
                     isStatic: bodyStaticInput.checked
                 };
 
