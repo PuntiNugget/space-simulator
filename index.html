@@ -46,6 +46,23 @@
             width: 100%;
             height: 100%;
         }
+        
+        /* ** NEW: Slingshot SVG Overlay ** */
+        #slingshot-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Allows clicks to pass through */
+        }
+        #slingshot-line {
+            stroke: rgba(255, 255, 255, 0.5);
+            stroke-width: 3;
+            stroke-dasharray: 5 5;
+            display: none; /* Hidden by default */
+        }
+
 
         /* Tool Styles */
         .tools {
@@ -73,7 +90,6 @@
             position: absolute;
             border-radius: 50%;
             transform-origin: center center;
-            /* ** NEW: Add transition for background color */
             transition: background-color 0.1s linear;
         }
 
@@ -98,9 +114,6 @@
             border-radius: 50%;
             top: 50%;
             left: 50%;
-            /* * ** UPDATED: Removed transform and transition
-             * We will control this 100% with JavaScript for smooth wrapping
-            */
             opacity: 0;
         }
 
@@ -145,7 +158,7 @@
             color: white;
         }
         #body-static {
-            width: auto; /* Let checkbox be normal size */
+            width: auto;
         }
 
         button {
@@ -225,6 +238,10 @@
         <div class="solar-system-container">
             <div id="universe">
                 </div>
+            
+            <svg id="slingshot-svg">
+                <line id="slingshot-line" />
+            </svg>
         </div>
 
         <div class="controls-panel-right">
@@ -261,6 +278,9 @@
             // === 1. GET ALL DOM ELEMENTS ===
             const container = document.querySelector('.solar-system-container');
             const universe = document.getElementById('universe');
+            // ** NEW **
+            const slingshotLine = document.getElementById('slingshot-line');
+            
             const toolSelectBtn = document.getElementById('tool-select');
             const toolPanBtn = document.getElementById('tool-pan');
             const toolPickerBtn = document.getElementById('tool-picker');
@@ -293,6 +313,7 @@
             let viewport = { x: 0, y: 0 };
             const G = 1; // Gravitational constant
             const PLANET_TO_STAR_MASS_THRESHOLD = 750;
+            const SLINGSHOT_POWER = 0.1; // ** NEW: Power multiplier for slingshot **
             
             let currentGalaxy = {
                 bodies: []
@@ -300,7 +321,7 @@
             
             let bodyElements = new Map();
             let selectedBody = null;
-            let isDraggingBody = false;
+            let isDraggingSlingshot = false; // ** Replaced 'isDraggingBody' **
             let lastMousePos = { x: 0, y: 0 };
             
             let isPaused = false;
@@ -312,7 +333,7 @@
             
             function simulationLoop() {
                 if (isPaused) {
-                    return; // Stop the loop if paused
+                    return;
                 }
                 
                 updatePhysics();
@@ -346,7 +367,8 @@
 
                 // Phase 2: Apply physics (move bodies)
                 for (const body of currentGalaxy.bodies) {
-                    if (body.isStatic || (isDraggingBody && selectedBody && body.id === selectedBody.id)) {
+                    // ** UPDATED: Don't apply physics if it's being slingshotted **
+                    if (body.isStatic || (isDraggingSlingshot && selectedBody && body.id === selectedBody.id)) {
                         continue;
                     }
                     const ax = body.fx / body.mass;
@@ -374,14 +396,14 @@
                             }
                         }
 
-                        const pullRadiusSq = Math.pow(closestBH.mass / 10, 2); 
-                        
-                        if (minDistSq < pullRadiusSq) {
-                            const dragFactor = (pullRadiusSq - minDistSq) / pullRadiusSq; 
-                            const decay = 1.0 - (0.005 * dragFactor * timeScale);
-                            
-                            body.vx *= decay;
-                            body.vy *= decay;
+                        if (closestBH) {
+                            const pullRadiusSq = Math.pow(closestBH.mass / 10, 2); 
+                            if (minDistSq < pullRadiusSq) {
+                                const dragFactor = (pullRadiusSq - minDistSq) / pullRadiusSq; 
+                                const decay = 1.0 - (0.005 * dragFactor * timeScale);
+                                body.vx *= decay;
+                                body.vy *= decay;
+                            }
                         }
                     }
                 }
@@ -493,7 +515,7 @@
             }
 
             /**
-             * ** UPDATED: Renders bodies with new Spaghettification/Wrapping **
+             * Renders bodies with Spaghettification/Wrapping
              */
             function renderGalaxy() {
                 const viewX = -viewport.x + 300;
@@ -519,12 +541,10 @@
                     
                     el.className = 'celestial-body ' + body.type;
                     
-                    // Base transform
                     const elX = body.x - (body.size / 2);
                     const elY = body.y - (body.size / 2);
                     let transform = `translate(${elX}px, ${elY}px)`; 
                     
-                    // --- ** NEW: Spaghettification & Wrapping Visuals ** ---
                     let isSpaghettified = false;
                     
                     if (body.type !== 'black-hole' && blackHoles.length > 0) {
@@ -542,54 +562,44 @@
                         
                         if (closestBH) {
                             const dist = Math.sqrt(minDistSq);
-                            // Start spaghettifying at 3x the black hole's size
                             const spagDist = closestBH.size * 3; 
                             
                             if (dist < spagDist) {
                                 isSpaghettified = true;
                                 const angle = Math.atan2(closestBH.y - body.y, closestBH.x - body.x);
                                 
-                                // 1. Hide the main planet body
                                 el.style.backgroundColor = 'transparent';
-                                el.style.width = `${body.size}px`; // Keep original size for positioning
+                                el.style.width = `${body.size}px`; 
                                 el.style.height = `${body.size}px`;
                                 
-                                // 2. Hijack the indicator to show the "wrap"
                                 indicatorEl.style.border = 'none';
                                 indicatorEl.style.borderRadius = '50%';
-                                const arcSize = body.size * 2 + (spagDist - dist); // Arc gets bigger as it gets closer
+                                const arcSize = body.size * 2 + (spagDist - dist);
                                 indicatorEl.style.width = `${arcSize}px`;
                                 indicatorEl.style.height = `${arcSize}px`;
                                 indicatorEl.style.opacity = '1';
-                                // Create an arc of the planet's color
                                 indicatorEl.style.borderTop = `3px solid ${body.color}`;
-                                // Rotate the arc to "trail" behind the planet
                                 indicatorEl.style.transform = `translate(-50%, -50%) rotate(${angle + Math.PI}rad)`;
                             }
                         }
                     }
                     
-                    // --- ** Reset styles if NOT spaghettified ** ---
                     if (!isSpaghettified) {
-                        // 1. Show the main planet body
                         el.style.backgroundColor = body.color;
                         el.style.width = `${body.size}px`;
                         el.style.height = `${body.size}px`;
                         
-                        // 2. Reset indicator to be a dotted gravity circle
                         const indicatorOpacity = Math.min(0.8, body.mass / 1500); 
                         const indicatorSize = (body.size * 1.5) + (body.mass / 20);
                         indicatorEl.style.border = '2px dotted rgba(255, 255, 255, 0.8)';
                         indicatorEl.style.width = `${indicatorSize}px`;
                         indicatorEl.style.height = `${indicatorSize}px`;
                         indicatorEl.style.opacity = indicatorOpacity;
-                        indicatorEl.style.transform = 'translate(-50%, -50%)'; // Reset rotation
+                        indicatorEl.style.transform = 'translate(-50%, -50%)';
                     }
                     
-                    // Apply final position transform
                     el.style.transform = transform;
 
-                    // Update selection border
                     if (selectedBody && selectedBody.id === body.id) {
                         el.style.border = '2px solid cyan';
                     } else {
@@ -622,28 +632,28 @@
             toolPanBtn.onclick = () => setActiveTool('pan');
             toolPickerBtn.onclick = () => setActiveTool('picker');
 
-            // --- ** UPDATED: Smart Form Function ** ---
+            // --- Smart Form Function ---
             function updateAddForm() {
                 const type = bodyTypeSelect.value;
                 if (type === 'star') {
                     colorField.style.display = 'block';
                     orbitField.style.display = 'none';
-                    staticField.style.display = 'block'; // Show static toggle
+                    staticField.style.display = 'block'; 
                     bodyMassInput.placeholder = "Mass (default: 1000)";
                     bodySizeInput.placeholder = "Size (default: 50)";
                     bodyColorInput.value = '#fcdc4c';
                 } else if (type === 'black-hole') {
                     colorField.style.display = 'none';
                     orbitField.style.display = 'none';
-                    staticField.style.display = 'block'; // Show static toggle
+                    staticField.style.display = 'block'; 
                     bodyMassInput.placeholder = "Mass (default: 20000)";
                     bodySizeInput.placeholder = "Size (default: 30)";
                     bodyColorInput.value = '#000000';
                 } else if (type === 'planet') {
                     colorField.style.display = 'block';
                     orbitField.style.display = 'block';
-                    staticField.style.display = 'none'; // Hide static toggle
-                    bodyStaticInput.checked = false; // Uncheck it
+                    staticField.style.display = 'none'; 
+                    bodyStaticInput.checked = false; 
                     bodyMassInput.placeholder = "Mass (default: 10)";
                     bodySizeInput.placeholder = "Size (default: 12)";
                     orbitDistInput.placeholder = "Orbit (default: 150)";
@@ -653,7 +663,7 @@
             bodyTypeSelect.addEventListener('change', updateAddForm);
             
             
-            // --- ** UPDATED: Add Body Listener (with defaults) ** ---
+            // --- Add Body Listener (with defaults) ---
             addBodyBtn.addEventListener('click', () => {
                 const type = bodyTypeSelect.value;
                 const rawMass = bodyMassInput.value;
@@ -682,7 +692,14 @@
                     newBody.color = rawColor || '#3d91f0';
                     
                     if (currentGalaxy.bodies.length > 0) {
-                        const centralBody = currentGalaxy.bodies[0];
+                        // Find the most massive body to orbit
+                        let centralBody = currentGalaxy.bodies[0];
+                        for(let i=1; i<currentGalaxy.bodies.length; i++) {
+                            if(currentGalaxy.bodies[i].mass > centralBody.mass) {
+                                centralBody = currentGalaxy.bodies[i];
+                            }
+                        }
+                        
                         const orbitDist = parseFloat(rawOrbitDist) || 150;
                         newBody.x = centralBody.x + orbitDist;
                         newBody.y = centralBody.y;
@@ -695,7 +712,7 @@
                 bodyMassInput.value = '';
                 bodySizeInput.value = '';
                 orbitDistInput.value = '';
-                bodyStaticInput.checked = false; // Reset checkbox
+                bodyStaticInput.checked = false; 
                 updateAddForm();
             });
 
@@ -779,7 +796,7 @@
             }
 
             
-            // === 5. MOUSE CONTROLS (with Pan/Drag/Picker) ===
+            // === 5. ** UPDATED MOUSE CONTROLS (with Slingshot) ** ===
             
             function getUniverseCoords(e) {
                 const rect = container.getBoundingClientRect();
@@ -787,7 +804,7 @@
                 const screenY = e.clientY - rect.top;
                 const universeX = (screenX - 300) + viewport.x;
                 const universeY = (screenY - 300) + viewport.y;
-                return { x: universeX, y: universeY };
+                return { x: universeX, y: universeY, screenX, screenY };
             }
             
             container.addEventListener('mousedown', (e) => {
@@ -798,10 +815,21 @@
                 if (currentTool === 'select') {
                     const clickedBody = findBodyAt(coords.x, coords.y);
                     selectBody(clickedBody);
-                    if (clickedBody) {
-                        isDraggingBody = true;
-                        clickedBody.vx = 0;
+                    
+                    // ** NEW: Can only slingshot non-static bodies **
+                    if (clickedBody && !clickedBody.isStatic) {
+                        isDraggingSlingshot = true;
+                        clickedBody.vx = 0; // Stop it
                         clickedBody.vy = 0;
+                        
+                        // Set line start to center of body (in screen coords)
+                        const bodyScreenX = (clickedBody.x - viewport.x) + 300;
+                        const bodyScreenY = (clickedBody.y - viewport.y) + 300;
+                        slingshotLine.setAttribute('x1', bodyScreenX);
+                        slingshotLine.setAttribute('y1', bodyScreenY);
+                        slingshotLine.setAttribute('x2', coords.screenX);
+                        slingshotLine.setAttribute('y2', coords.screenY);
+                        slingshotLine.style.display = 'block';
                     }
                 } else if (currentTool === 'pan') {
                     container.style.cursor = 'grabbing';
@@ -827,30 +855,48 @@
                 if (currentTool === 'pan') {
                     viewport.x -= deltaX;
                     viewport.y -= deltaY;
-                } else if (currentTool === 'select' && isDraggingBody && selectedBody) {
+                } else if (currentTool === 'select' && isDraggingSlingshot) {
+                    // ** NEW: Update slingshot line end **
                     const coords = getUniverseCoords(e);
-                    selectedBody.x = coords.x;
-                    selectedBody.y = coords.y;
-                    selectedBody.vx = 0;
-                    selectedBody.vy = 0;
+                    slingshotLine.setAttribute('x2', coords.screenX);
+                    slingshotLine.setAttribute('y2', coords.screenY);
                 }
                 
                 lastMousePos = newMousePos;
             });
             
-            container.addEventListener('mouseup', () => {
+            container.addEventListener('mouseup', (e) => {
                 isMouseDown = false;
+                slingshotLine.style.display = 'none'; // Hide line on any mouseup
+                
                 if (currentTool === 'pan') {
                     container.style.cursor = 'grab';
                 }
-                if (isDraggingBody) {
-                    isDraggingBody = false;
+                
+                if (isDraggingSlingshot) {
+                    // ** NEW: Launch the planet! **
+                    const startX = parseFloat(slingshotLine.getAttribute('x1'));
+                    const startY = parseFloat(slingshotLine.getAttribute('y1'));
+                    
+                    const rect = container.getBoundingClientRect();
+                    const endX = e.clientX - rect.left;
+                    const endY = e.clientY - rect.top;
+                    
+                    // Vector from end to start (pull back and release)
+                    const vX = (startX - endX) * SLINGSHOT_POWER;
+                    const vY = (startY - endY) * SLINGSHOT_POWER;
+                    
+                    selectedBody.vx = vX;
+                    selectedBody.vy = vY;
+                    
+                    isDraggingSlingshot = false;
                 }
             });
             
             container.addEventListener('mouseleave', () => {
                 isMouseDown = false;
-                isDraggingBody = false;
+                isDraggingSlingshot = false;
+                slingshotLine.style.display = 'none'; // Hide line
                 if (currentTool === 'pan') {
                     container.style.cursor = 'grab';
                 }
@@ -860,12 +906,12 @@
             // --- Simulation Control Listeners ---
             
             pauseBtn.addEventListener('click', () => {
-                isPaused = !isPaused; // Toggle the pause state
+                isPaused = !isPaused; 
                 if (isPaused) {
-                    pauseBtn.innerHTML = '►'; // Show 'Play' icon
+                    pauseBtn.innerHTML = '►'; 
                     pauseBtn.title = 'Resume';
                 } else {
-                    pauseBtn.innerHTML = '❚❚'; // Show 'Pause' icon
+                    pauseBtn.innerHTML = '❚❚'; 
                     pauseBtn.title = 'Pause';
                     requestAnimationFrame(simulationLoop);
                 }
@@ -880,7 +926,7 @@
                 if (timeScale > timeScaleStep) { 
                     timeScale -= timeScaleStep;
                 } else {
-                    timeScale = timeScaleStep; // Set to min
+                    timeScale = timeScaleStep; 
                 }
                 updateSpeedDisplay();
             });
