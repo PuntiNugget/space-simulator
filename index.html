@@ -45,7 +45,6 @@
             position: absolute;
             width: 100%;
             height: 100%;
-            /* ** NEW: Will-change hint for browser optimization ** */
             will-change: transform;
         }
         
@@ -192,19 +191,22 @@
             background-color: #fff;
         }
         
-        /* Sim Control Styles */
+        /* ** UPDATED: Sim Control Styles ** */
         .sim-controls {
             display: flex;
+            flex-wrap: wrap; /* Allow wrapping */
             flex-direction: row;
             justify-content: space-around;
             align-items: center;
+            gap: 8px; /* Add gap for wrapping */
         }
         .sim-controls button {
             width: 50px;
             font-size: 1.2em;
         }
+        /* Make text displays take up full width on their own row */
         .sim-controls span {
-            width: 100px;
+            width: 100%;
             text-align: center;
             color: #fcdc4c;
             font-weight: bold;
@@ -371,6 +373,10 @@
                     <button id="pause-btn" title="Pause">❚❚</button>
                     <button id="speed-up-btn" title="Speed Up">&gt;&gt;</button>
                     <span id="speed-display">Speed: 1.0x</span>
+                    
+                    <button id="zoom-out-btn" title="Zoom Out">-</button>
+                    <button id="zoom-in-btn" title="Zoom In">+</button>
+                    <span id="zoom-display">Zoom: 1.0x</span>
                 </div>
             </fieldset>
 
@@ -438,6 +444,11 @@
             const speedUpBtn = document.getElementById('speed-up-btn');
             const speedDisplay = document.getElementById('speed-display');
             
+            // ** NEW: Zoom elements **
+            const zoomInBtn = document.getElementById('zoom-in-btn');
+            const zoomOutBtn = document.getElementById('zoom-out-btn');
+            const zoomDisplay = document.getElementById('zoom-display');
+            
             // Achievement Elements
             const achievementToastEl = document.getElementById('achievement-toast');
             const achievementNameEl = document.getElementById('achievement-name');
@@ -451,12 +462,11 @@
             // === 2. CORE SIMULATION STATE ===
             let currentTool = 'select';
             let isMouseDown = false;
-            // ** UPDATED: Viewport now includes scale **
             let viewport = { x: 0, y: 0, scale: 1.0 };
             const G = 1;
             const PLANET_TO_STAR_MASS_THRESHOLD = 750;
             const SLINGSHOT_POWER = 0.1;
-            const ZOOM_STEP = 0.1; // ** NEW: Zoom speed **
+            const ZOOM_STEP = 0.1; // Zoom 10% at a time
             
             let currentGalaxy = {
                 bodies: []
@@ -721,10 +731,9 @@
             }
 
             /**
-             * ** UPDATED: Renders with zoom **
+             * Renders with zoom, Spaghettification, & Population
              */
             function renderGalaxy() {
-                // Apply viewport pan and zoom to the entire universe
                 const viewX = -viewport.x + 300;
                 const viewY = -viewport.y + 300;
                 universe.style.transform = `translate(${viewX}px, ${viewY}px) scale(${viewport.scale})`;
@@ -757,7 +766,6 @@
                     
                     el.className = 'celestial-body ' + body.type;
                     
-                    // Position is now relative to the scaled/panned universe
                     const elX = body.x - (body.size / 2);
                     const elY = body.y - (body.size / 2);
                     let transform = `translate(${elX}px, ${elY}px)`; 
@@ -963,7 +971,6 @@
             saveGalaxyBtn.addEventListener('click', () => {
                 const galaxyName = document.getElementById('galaxy-name').value;
                 if (!galaxyName) return alert('Please enter a name!');
-                // ** UPDATED: Save viewport scale **
                 const saveData = { bodies: currentGalaxy.bodies, viewport: viewport };
                 localStorage.setItem(galaxyName, JSON.stringify(saveData));
                 alert(`Galaxy "${galaxyName}" saved!`);
@@ -975,7 +982,6 @@
                 const savedData = JSON.parse(localStorage.getItem(galaxyName));
                 clearAll(); 
                 currentGalaxy.bodies = savedData.bodies;
-                // ** UPDATED: Load viewport scale (with default) **
                 viewport = savedData.viewport || { x: 0, y: 0, scale: 1.0 };
                 renderGalaxy(); // Render once to apply new viewport
                 alert(`Galaxy "${galaxyName}" loaded!`);
@@ -989,7 +995,6 @@
                 currentGalaxy.bodies = [];
                 universe.innerHTML = '';
                 bodyElements.clear();
-                // ** UPDATED: Reset viewport scale **
                 viewport = { x: 0, y: 0, scale: 1.0 };
                 selectBody(null);
                 renderGalaxy(); // Render once to apply cleared state
@@ -1116,20 +1121,13 @@
 
 
             
-            // === 5. MOUSE CONTROLS (with Slingshot & Zoom) ===
+            // === 5. MOUSE CONTROLS (with Slingshot) ===
             
-            /**
-             * ** UPDATED: Now accounts for zoom **
-             * Converts a screen click (e.g., e.clientX) to a coordinate
-             * inside the pannable, zoomable universe.
-             */
             function getUniverseCoords(e) {
                 const rect = container.getBoundingClientRect();
                 const screenX = e.clientX - rect.left;
                 const screenY = e.clientY - rect.top;
                 
-                // 300, 300 is the center of the 600x600 container
-                // Un-scale the mouse position, then un-pan it
                 const universeX = (screenX - 300) / viewport.scale + viewport.x;
                 const universeY = (screenY - 300) / viewport.scale + viewport.y;
                 return { x: universeX, y: universeY, screenX, screenY };
@@ -1149,8 +1147,6 @@
                         clickedBody.vx = 0; 
                         clickedBody.vy = 0;
                         
-                        // ** UPDATED: Slingshot line start logic **
-                        // Convert body's universe position back to screen position
                         const bodyScreenX = (clickedBody.x - viewport.x) * viewport.scale + 300;
                         const bodyScreenY = (clickedBody.y - viewport.y) * viewport.scale + 300;
                         slingshotLine.setAttribute('x1', bodyScreenX);
@@ -1181,7 +1177,6 @@
                 const deltaY = newMousePos.y - lastMousePos.y;
                 
                 if (currentTool === 'pan') {
-                    // ** UPDATED: Pan speed respects zoom level **
                     viewport.x -= deltaX / viewport.scale;
                     viewport.y -= deltaY / viewport.scale;
                 } else if (currentTool === 'select' && isDraggingSlingshot) {
@@ -1209,7 +1204,6 @@
                     const endX = e.clientX - rect.left;
                     const endY = e.clientY - rect.top;
                     
-                    // ** UPDATED: Slingshot power respects zoom **
                     const vX = (startX - endX) * SLINGSHOT_POWER / viewport.scale;
                     const vY = (startY - endY) * SLINGSHOT_POWER / viewport.scale;
                     
@@ -1231,36 +1225,7 @@
                 }
             });
             
-            // ** NEW: Zoom Event Listener **
-            container.addEventListener('wheel', (e) => {
-                e.preventDefault(); // Stop page from scrolling
-
-                const coords_before = getUniverseCoords(e);
-
-                // Determine zoom direction
-                const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP; // deltaY > 0 is scroll down (zoom out)
-                let newScale = viewport.scale + delta * viewport.scale; // Make zoom exponential
-                
-                // Clamp zoom
-                newScale = Math.max(0.05, Math.min(newScale, 20.0));
-                
-                viewport.scale = newScale;
-
-                // --- Zoom to cursor logic ---
-                // 1. Get mouse position in universe *after* zoom
-                const coords_after = getUniverseCoords(e);
-                
-                // 2. Calculate the difference (how much the universe "slipped" under the cursor)
-                const dx = coords_after.x - coords_before.x;
-                const dy = coords_after.y - coords_before.y;
-                
-                // 3. Compensate by panning the viewport
-                viewport.x += dx;
-                viewport.y += dy;
-                
-                // 4. Re-render immediately so zoom works even when paused
-                renderGalaxy();
-            });
+            // ** REMOVED: Wheel event listener **
             
             
             // --- Simulation Control Listeners ---
@@ -1296,6 +1261,25 @@
             
             function updateSpeedDisplay() {
                 speedDisplay.textContent = `Speed: ${timeScale.toFixed(2)}x`;
+            }
+
+            // ** NEW: Zoom Button Listeners **
+            zoomInBtn.addEventListener('click', () => {
+                let newScale = viewport.scale + ZOOM_STEP * viewport.scale;
+                viewport.scale = Math.min(newScale, 20.0); // Clamp max zoom
+                updateZoomDisplay();
+                renderGalaxy(); // Re-render even if paused
+            });
+            
+            zoomOutBtn.addEventListener('click', () => {
+                let newScale = viewport.scale - ZOOM_STEP * viewport.scale;
+                viewport.scale = Math.max(0.05, newScale); // Clamp min zoom
+                updateZoomDisplay();
+                renderGalaxy(); // Re-render even if paused
+            });
+
+            function updateZoomDisplay() {
+                zoomDisplay.textContent = `Zoom: ${viewport.scale.toFixed(1)}x`;
             }
 
 
