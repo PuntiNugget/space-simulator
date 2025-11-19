@@ -107,7 +107,6 @@
             background-color: #3d91f0;
         }
         
-        /* ** NEW: Habitable Planet Style ** */
         .habitable-planet {
             background-color: #2b9d4a; /* Green */
             box-shadow: 0 0 10px #5eff8b;
@@ -123,7 +122,7 @@
             opacity: 0;
         }
         
-        /* ** NEW: Population Label Style ** */
+        /* Population Label Style */
         .population-label {
             position: absolute;
             top: 100%; /* Position below the planet */
@@ -557,9 +556,8 @@
                     }
                 }
                 
-                // ** NEW: Phase 2.6: Habitable Planet Population Growth **
+                // Phase 2.6: Habitable Planet Population Growth
                 if (currentGalaxy.bodies.length > 1) {
-                    // Find the most massive body (the "sun")
                     let centralBody = currentGalaxy.bodies[0];
                     for(let i=1; i<currentGalaxy.bodies.length; i++) {
                         if(currentGalaxy.bodies[i].mass > centralBody.mass) {
@@ -573,7 +571,6 @@
                             const dy = body.y - centralBody.y;
                             const currentAngle = Math.atan2(dy, dx);
                             
-                            // Check for crossover (one full orbit)
                             if (body.lastAngle > 0 && currentAngle <= 0) {
                                 const growth = Math.floor(Math.random() * 1000) + 1;
                                 body.population += growth;
@@ -602,31 +599,38 @@
                         const collisionDist = (bodyA.size / 2) + (bodyB.size / 2);
 
                         if (dist < collisionDist) {
-                            // ** NEW: Check for non-lethal collisions FIRST **
-                            const isA_Hab = bodyA.isHabitable;
-                            const isB_Hab = bodyB.isHabitable;
-                            const isA_Planet = bodyA.type === 'planet';
-                            const isB_Planet = bodyB.type === 'planet';
-                            
-                            // planet-planet, planet-habitable, habitable-habitable
-                            if ( (isA_Planet || isA_Hab) && (isB_Planet || isB_Hab) ) {
-                                const wipeout = 0.9 + (Math.random() * 0.1); // 90-100%
-                                if (isA_Hab) bodyA.population = Math.floor(bodyA.population * (1.0 - wipeout));
-                                if (isB_Hab) bodyB.population = Math.floor(bodyB.population * (1.0 - wipeout));
-                                
-                                // TODO: Add bounce physics? For now, they just pass through.
-                                continue; // Skip merging
-                            }
-                            
-                            // ** If here, it's a LETHAL collision (Star or BH involved) **
                             let survivor, victim;
                             
+                            // Check for Black Hole first
                             if (bodyA.type === 'black-hole') {
                                 survivor = bodyA; victim = bodyB;
+                                mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
+                            
                             } else if (bodyB.type === 'black-hole') {
                                 survivor = bodyB; victim = bodyA;
+                                mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
+                            
                             } else {
-                                // Neither is a black hole, so the one with more MASS wins.
+                                // --- NO BLACK HOLE INVOLVED ---
+                                const isA_Hab = bodyA.type === 'habitable-planet';
+                                const isB_Hab = bodyB.type === 'habitable-planet';
+                                const isA_Planet = bodyA.type === 'planet';
+                                const isB_Planet = bodyB.type === 'planet';
+
+                                // ** FIXED LOGIC: Non-lethal collisions **
+                                // (hab + hab) OR (hab + planet)
+                                if ( (isA_Hab && isB_Hab) || (isA_Hab && isB_Planet) || (isB_Hab && isA_Planet) ) {
+                                    const wipeout = 0.9 + (Math.random() * 0.1); // 90-100%
+                                    if (isA_Hab) bodyA.population = Math.floor(bodyA.population * (1.0 - wipeout));
+                                    if (isB_Hab) bodyB.population = Math.floor(bodyB.population * (1.0 - wipeout));
+                                    
+                                    // TODO: Add bounce physics
+                                    
+                                    continue; // Skip merging
+                                }
+                                
+                                // ** If here, it's a LETHAL merge (star+planet, star+star, planet+planet) **
+                                // The one with more MASS wins.
                                 if (bodyA.mass >= bodyB.mass) {
                                     survivor = bodyA;
                                     victim = bodyB;
@@ -634,9 +638,8 @@
                                     survivor = bodyB;
                                     victim = bodyA;
                                 }
+                                mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
                             }
-                            
-                            mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
                         }
                     }
                 }
@@ -684,15 +687,18 @@
              */
             function mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents) {
                 // ** ACHIEVEMENT TRIGGERS **
-                if (survivor.type === 'black-hole' && (victim.type === 'planet' || victim.type === 'habitable-planet')) {
+                const vicType = victim.type;
+                const survType = survivor.type;
+
+                if (survType === 'black-hole' && (vicType === 'planet' || vicType === 'habitable-planet' || vicType === 'star')) {
                     unlockAchievement('spaghetti', 'Yummy spaghetti!!');
-                } else if (survivor.type === 'star' && (victim.type === 'planet' || victim.type === 'habitable-planet')) {
+                } else if (survType === 'star' && (vicType === 'planet' || vicType === 'habitable-planet')) {
                     unlockAchievement('nom_nom', 'NOM NOM');
-                } else if ((survivor.type === 'planet' || survivor.type === 'habitable-planet') && victim.type === 'star') {
+                } else if ((survType === 'planet' || survType === 'habitable-planet') && vicType === 'star') {
                     unlockAchievement('number_one', "I'm number 1");
                 }
 
-                if (survivor.type === 'black-hole') {
+                if (survType === 'black-hole') {
                     survivor.isStatic = false; 
                 }
 
@@ -701,24 +707,21 @@
                 survivor.vy = ((survivor.mass * survivor.vy) + (victim.mass * victim.vy)) / newMass;
                 survivor.mass = newMass;
                 
-                if (survivor.type !== 'black-hole') {
+                if (survType !== 'black-hole') {
                     survivor.size = Math.sqrt(Math.pow(survivor.size, 2) + Math.pow(victim.size, 2));
                 }
                 
-                // ** NEW: Combine populations if two habitable planets merge **
-                // (Note: this only happens if one is massive enough to be a "star" density)
                 if (survivor.isHabitable && victim.isHabitable) {
                     survivor.population += victim.population;
                 }
                 
                 bodiesToDestroy.add(victim.id);
                 
-                if (survivor.type === 'star' && victim.type === 'star') {
+                if (survType === 'star' && vicType === 'star') {
                     supernovaEvents.push(survivor);
                 }
                 
-                // ** UPDATED: Evolve habitable planets too **
-                if ((survivor.type === 'planet' || survivor.type === 'habitable-planet') && survivor.mass >= PLANET_TO_STAR_MASS_THRESHOLD) {
+                if ((survType === 'planet' || survType === 'habitable-planet') && survivor.mass >= PLANET_TO_STAR_MASS_THRESHOLD) {
                     survivor.type = 'star';
                     survivor.color = '#fcdc4c';
                     survivor.isHabitable = false; // No longer habitable
@@ -726,7 +729,7 @@
             }
 
             /**
-             * ** UPDATED: Renders bodies with Spaghettification & Population **
+             * Renders bodies with Spaghettification/Wrapping
              */
             function renderGalaxy() {
                 const viewX = -viewport.x + 300;
@@ -738,7 +741,7 @@
                 for (const body of currentGalaxy.bodies) {
                     let el = bodyElements.get(body.id);
                     let indicatorEl;
-                    let labelEl; // ** NEW: For population **
+                    let labelEl; 
                     
                     if (!el) {
                         el = document.createElement('div');
@@ -746,7 +749,6 @@
                         indicatorEl.className = 'gravity-indicator';
                         el.appendChild(indicatorEl); 
                         
-                        // ** NEW: Create label only for habitable planets **
                         if (body.isHabitable) {
                             labelEl = document.createElement('div');
                             labelEl.className = 'population-label';
@@ -757,7 +759,7 @@
                         universe.appendChild(el);
                     } else {
                         indicatorEl = el.querySelector('.gravity-indicator');
-                        labelEl = el.querySelector('.population-label'); // ** Find label **
+                        labelEl = el.querySelector('.population-label'); 
                     }
                     
                     el.className = 'celestial-body ' + body.type;
@@ -790,7 +792,7 @@
                                 const angle = Math.atan2(closestBH.y - body.y, closestBH.x - body.x);
                                 
                                 el.style.backgroundColor = 'transparent';
-                                if (labelEl) labelEl.style.display = 'none'; // Hide pop
+                                if (labelEl) labelEl.style.display = 'none'; 
                                 el.style.width = `${body.size}px`; 
                                 el.style.height = `${body.size}px`;
                                 
@@ -808,7 +810,7 @@
                     
                     if (!isSpaghettified) {
                         el.style.backgroundColor = body.color;
-                        if (labelEl) labelEl.style.display = 'block'; // Show pop
+                        if (labelEl) labelEl.style.display = 'block'; 
                         el.style.width = `${body.size}px`;
                         el.style.height = `${body.size}px`;
                         
@@ -821,7 +823,6 @@
                         indicatorEl.style.transform = 'translate(-50%, -50%)';
                     }
                     
-                    // ** NEW: Update population label **
                     if (labelEl && body.isHabitable) {
                         labelEl.textContent = `Pop: ${body.population.toLocaleString()}`;
                     }
@@ -860,7 +861,7 @@
             toolPanBtn.onclick = () => setActiveTool('pan');
             toolPickerBtn.onclick = () => setActiveTool('picker');
 
-            // --- ** UPDATED: Smart Form Function ** ---
+            // --- Smart Form Function ---
             function updateAddForm() {
                 const type = bodyTypeSelect.value;
                 if (type === 'star') {
@@ -900,7 +901,7 @@
             bodyTypeSelect.addEventListener('change', updateAddForm);
             
             
-            // --- ** UPDATED: Add Body Listener (with defaults) ** ---
+            // --- Add Body Listener (with defaults) ---
             addBodyBtn.addEventListener('click', () => {
                 const type = bodyTypeSelect.value;
                 const rawMass = bodyMassInput.value;
@@ -913,7 +914,6 @@
                     type: type,
                     x: 0, y: 0, vx: 0, vy: 0, fx: 0, fy: 0,
                     isStatic: bodyStaticInput.checked,
-                    // ** NEW: Habitable properties **
                     isHabitable: false,
                     population: 0,
                     lastAngle: 0
@@ -939,7 +939,6 @@
                     newBody.population = 1000; // Start with 1000 people
                 }
                 
-                // Orbit logic for planets and habitable planets
                 if ((type === 'planet' || type === 'habitable-planet') && currentGalaxy.bodies.length > 0) {
                     let centralBody = currentGalaxy.bodies[0];
                     for(let i=1; i<currentGalaxy.bodies.length; i++) {
@@ -952,7 +951,6 @@
                     newBody.x = centralBody.x + orbitDist;
                     newBody.y = centralBody.y;
                     
-                    // Set initial angle for rotation tracking
                     newBody.lastAngle = Math.atan2(newBody.y - centralBody.y, newBody.x - centralBody.x);
                     
                     const v = Math.sqrt((G * centralBody.mass) / orbitDist);
