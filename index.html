@@ -45,6 +45,8 @@
             position: absolute;
             width: 100%;
             height: 100%;
+            /* ** NEW: Will-change hint for browser optimization ** */
+            will-change: transform;
         }
         
         /* Slingshot SVG Overlay */
@@ -449,10 +451,12 @@
             // === 2. CORE SIMULATION STATE ===
             let currentTool = 'select';
             let isMouseDown = false;
-            let viewport = { x: 0, y: 0 };
+            // ** UPDATED: Viewport now includes scale **
+            let viewport = { x: 0, y: 0, scale: 1.0 };
             const G = 1;
             const PLANET_TO_STAR_MASS_THRESHOLD = 750;
             const SLINGSHOT_POWER = 0.1;
+            const ZOOM_STEP = 0.1; // ** NEW: Zoom speed **
             
             let currentGalaxy = {
                 bodies: []
@@ -490,9 +494,6 @@
                 requestAnimationFrame(simulationLoop);
             }
 
-            /**
-             * ** UPDATED: Physics and Collision Update **
-             */
             function updatePhysics() {
                 const blackHoles = currentGalaxy.bodies.filter(b => b.type === 'black-hole');
                 
@@ -617,20 +618,15 @@
                                 const isA_Planet = bodyA.type === 'planet';
                                 const isB_Planet = bodyB.type === 'planet';
 
-                                // ** FIXED LOGIC: Non-lethal collisions **
-                                // (hab + hab) OR (hab + planet)
+                                // Non-lethal collisions: (hab + hab) OR (hab + planet)
                                 if ( (isA_Hab && isB_Hab) || (isA_Hab && isB_Planet) || (isB_Hab && isA_Planet) ) {
                                     const wipeout = 0.9 + (Math.random() * 0.1); // 90-100%
                                     if (isA_Hab) bodyA.population = Math.floor(bodyA.population * (1.0 - wipeout));
                                     if (isB_Hab) bodyB.population = Math.floor(bodyB.population * (1.0 - wipeout));
-                                    
-                                    // TODO: Add bounce physics
-                                    
                                     continue; // Skip merging
                                 }
                                 
-                                // ** If here, it's a LETHAL merge (star+planet, star+star, planet+planet) **
-                                // The one with more MASS wins.
+                                // LETHAL merge: The one with more MASS wins.
                                 if (bodyA.mass >= bodyB.mass) {
                                     survivor = bodyA;
                                     victim = bodyB;
@@ -682,11 +678,7 @@
                 }
             }
             
-            /**
-             * ** UPDATED: mergeBodies now triggers achievements **
-             */
             function mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents) {
-                // ** ACHIEVEMENT TRIGGERS **
                 const vicType = victim.type;
                 const survType = survivor.type;
 
@@ -724,17 +716,18 @@
                 if ((survType === 'planet' || survType === 'habitable-planet') && survivor.mass >= PLANET_TO_STAR_MASS_THRESHOLD) {
                     survivor.type = 'star';
                     survivor.color = '#fcdc4c';
-                    survivor.isHabitable = false; // No longer habitable
+                    survivor.isHabitable = false;
                 }
             }
 
             /**
-             * Renders bodies with Spaghettification/Wrapping
+             * ** UPDATED: Renders with zoom **
              */
             function renderGalaxy() {
+                // Apply viewport pan and zoom to the entire universe
                 const viewX = -viewport.x + 300;
                 const viewY = -viewport.y + 300;
-                universe.style.transform = `translate(${viewX}px, ${viewY}px)`;
+                universe.style.transform = `translate(${viewX}px, ${viewY}px) scale(${viewport.scale})`;
                 
                 const blackHoles = currentGalaxy.bodies.filter(b => b.type === 'black-hole');
                 
@@ -764,6 +757,7 @@
                     
                     el.className = 'celestial-body ' + body.type;
                     
+                    // Position is now relative to the scaled/panned universe
                     const elX = body.x - (body.size / 2);
                     const elY = body.y - (body.size / 2);
                     let transform = `translate(${elX}px, ${elY}px)`; 
@@ -969,6 +963,7 @@
             saveGalaxyBtn.addEventListener('click', () => {
                 const galaxyName = document.getElementById('galaxy-name').value;
                 if (!galaxyName) return alert('Please enter a name!');
+                // ** UPDATED: Save viewport scale **
                 const saveData = { bodies: currentGalaxy.bodies, viewport: viewport };
                 localStorage.setItem(galaxyName, JSON.stringify(saveData));
                 alert(`Galaxy "${galaxyName}" saved!`);
@@ -980,7 +975,9 @@
                 const savedData = JSON.parse(localStorage.getItem(galaxyName));
                 clearAll(); 
                 currentGalaxy.bodies = savedData.bodies;
-                viewport = savedData.viewport || { x: 0, y: 0 };
+                // ** UPDATED: Load viewport scale (with default) **
+                viewport = savedData.viewport || { x: 0, y: 0, scale: 1.0 };
+                renderGalaxy(); // Render once to apply new viewport
                 alert(`Galaxy "${galaxyName}" loaded!`);
             });
             clearGalaxyBtn.addEventListener('click', () => {
@@ -992,8 +989,10 @@
                 currentGalaxy.bodies = [];
                 universe.innerHTML = '';
                 bodyElements.clear();
-                viewport = { x: 0, y: 0 };
+                // ** UPDATED: Reset viewport scale **
+                viewport = { x: 0, y: 0, scale: 1.0 };
                 selectBody(null);
+                renderGalaxy(); // Render once to apply cleared state
             }
             function populateLoadMenu() {
                 loadGalaxyMenu.innerHTML = '';
@@ -1048,7 +1047,7 @@
                 return null;
             }
 
-            // ** NEW: Achievement System Functions **
+            // --- Achievement System Functions ---
             function loadAchievements() {
                 const saved = localStorage.getItem('galaxySimAchievements');
                 if (saved) {
@@ -1117,14 +1116,22 @@
 
 
             
-            // === 5. MOUSE CONTROLS (with Slingshot) ===
+            // === 5. MOUSE CONTROLS (with Slingshot & Zoom) ===
             
+            /**
+             * ** UPDATED: Now accounts for zoom **
+             * Converts a screen click (e.g., e.clientX) to a coordinate
+             * inside the pannable, zoomable universe.
+             */
             function getUniverseCoords(e) {
                 const rect = container.getBoundingClientRect();
                 const screenX = e.clientX - rect.left;
                 const screenY = e.clientY - rect.top;
-                const universeX = (screenX - 300) + viewport.x;
-                const universeY = (screenY - 300) + viewport.y;
+                
+                // 300, 300 is the center of the 600x600 container
+                // Un-scale the mouse position, then un-pan it
+                const universeX = (screenX - 300) / viewport.scale + viewport.x;
+                const universeY = (screenY - 300) / viewport.scale + viewport.y;
                 return { x: universeX, y: universeY, screenX, screenY };
             }
             
@@ -1142,8 +1149,10 @@
                         clickedBody.vx = 0; 
                         clickedBody.vy = 0;
                         
-                        const bodyScreenX = (clickedBody.x - viewport.x) + 300;
-                        const bodyScreenY = (clickedBody.y - viewport.y) + 300;
+                        // ** UPDATED: Slingshot line start logic **
+                        // Convert body's universe position back to screen position
+                        const bodyScreenX = (clickedBody.x - viewport.x) * viewport.scale + 300;
+                        const bodyScreenY = (clickedBody.y - viewport.y) * viewport.scale + 300;
                         slingshotLine.setAttribute('x1', bodyScreenX);
                         slingshotLine.setAttribute('y1', bodyScreenY);
                         slingshotLine.setAttribute('x2', coords.screenX);
@@ -1172,8 +1181,9 @@
                 const deltaY = newMousePos.y - lastMousePos.y;
                 
                 if (currentTool === 'pan') {
-                    viewport.x -= deltaX;
-                    viewport.y -= deltaY;
+                    // ** UPDATED: Pan speed respects zoom level **
+                    viewport.x -= deltaX / viewport.scale;
+                    viewport.y -= deltaY / viewport.scale;
                 } else if (currentTool === 'select' && isDraggingSlingshot) {
                     const coords = getUniverseCoords(e);
                     slingshotLine.setAttribute('x2', coords.screenX);
@@ -1199,8 +1209,9 @@
                     const endX = e.clientX - rect.left;
                     const endY = e.clientY - rect.top;
                     
-                    const vX = (startX - endX) * SLINGSHOT_POWER;
-                    const vY = (startY - endY)* SLINGSHOT_POWER;
+                    // ** UPDATED: Slingshot power respects zoom **
+                    const vX = (startX - endX) * SLINGSHOT_POWER / viewport.scale;
+                    const vY = (startY - endY) * SLINGSHOT_POWER / viewport.scale;
                     
                     selectedBody.vx = vX;
                     selectedBody.vy = vY;
@@ -1220,8 +1231,39 @@
                 }
             });
             
+            // ** NEW: Zoom Event Listener **
+            container.addEventListener('wheel', (e) => {
+                e.preventDefault(); // Stop page from scrolling
+
+                const coords_before = getUniverseCoords(e);
+
+                // Determine zoom direction
+                const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP; // deltaY > 0 is scroll down (zoom out)
+                let newScale = viewport.scale + delta * viewport.scale; // Make zoom exponential
+                
+                // Clamp zoom
+                newScale = Math.max(0.05, Math.min(newScale, 20.0));
+                
+                viewport.scale = newScale;
+
+                // --- Zoom to cursor logic ---
+                // 1. Get mouse position in universe *after* zoom
+                const coords_after = getUniverseCoords(e);
+                
+                // 2. Calculate the difference (how much the universe "slipped" under the cursor)
+                const dx = coords_after.x - coords_before.x;
+                const dy = coords_after.y - coords_before.y;
+                
+                // 3. Compensate by panning the viewport
+                viewport.x += dx;
+                viewport.y += dy;
+                
+                // 4. Re-render immediately so zoom works even when paused
+                renderGalaxy();
+            });
             
-            // --- ** UPDATED: Simulation Control Listeners ** ---
+            
+            // --- Simulation Control Listeners ---
             
             pauseBtn.addEventListener('click', () => {
                 isPaused = !isPaused; 
