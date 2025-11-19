@@ -189,7 +189,7 @@
             font-weight: bold;
         }
         
-        /* ** NEW: Achievement Toast Styles ** */
+        /* Achievement Toast Styles */
         #achievement-toast {
             position: fixed;
             bottom: 20px;
@@ -215,6 +215,68 @@
             margin: 0;
             padding: 0;
             font-style: italic;
+        }
+
+        /* ** NEW: Achievement Menu Modal ** */
+        #achievement-menu-modal {
+            display: none; /* Hidden by default */
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.7);
+            justify-content: center;
+            align-items: center;
+        }
+        #achievement-menu-content {
+            position: relative;
+            background-color: #1a1a2a;
+            border: 1px solid #444;
+            padding: 20px;
+            border-radius: 8px;
+            width: 400px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        #close-achievements-btn {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            color: #aaa;
+            background: none;
+            border: none;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            width: auto;
+        }
+        #close-achievements-btn:hover {
+            color: white;
+        }
+        #achievement-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        #achievement-list li {
+            background: #333;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+        }
+        /* Style for locked achievements */
+        #achievement-list li.locked {
+            color: #777;
+            font-style: italic;
+        }
+        #delete-achievements-btn {
+            background-color: #c1440e;
+            color: white;
+            margin-top: 20px;
+            width: 100%;
         }
         
     </style>
@@ -276,6 +338,11 @@
         <div class="controls-panel-right">
 
             <fieldset>
+                <legend>Achievements</legend>
+                <button id="view-achievements-btn">View Achievements</button>
+            </fieldset>
+
+            <fieldset>
                 <legend>Simulation Control</legend>
                 <div class="sim-controls">
                     <button id="slow-down-btn" title="Slow Down">&lt;&lt;</button>
@@ -304,6 +371,16 @@
     </div> <div id="achievement-toast">
         <h3>🏆 Achievement Unlocked!</h3>
         <p id="achievement-name"></p>
+    </div>
+    
+    <div id="achievement-menu-modal">
+        <div id="achievement-menu-content">
+            <button id="close-achievements-btn">&times;</button>
+            <h2 style="color: #fcdc4c; margin-top: 0;">Achievements</h2>
+            <ul id="achievement-list">
+                </ul>
+            <button id="delete-achievements-btn">Delete progress</button>
+        </div>
     </div>
 
 
@@ -339,9 +416,14 @@
             const speedUpBtn = document.getElementById('speed-up-btn');
             const speedDisplay = document.getElementById('speed-display');
             
-            // ** NEW: Achievement Elements **
+            // Achievement Elements
             const achievementToastEl = document.getElementById('achievement-toast');
             const achievementNameEl = document.getElementById('achievement-name');
+            const viewAchievementsBtn = document.getElementById('view-achievements-btn');
+            const achievementMenuModal = document.getElementById('achievement-menu-modal');
+            const closeAchievementsBtn = document.getElementById('close-achievements-btn');
+            const achievementList = document.getElementById('achievement-list');
+            const deleteAchievementsBtn = document.getElementById('delete-achievements-btn');
 
 
             // === 2. CORE SIMULATION STATE ===
@@ -365,7 +447,15 @@
             let timeScale = 1.0;
             const timeScaleStep = 0.25;
             
-            // ** NEW: Achievement State **
+            // ** NEW: Achievement Master List **
+            const ALL_ACHIEVEMENTS = {
+                'nom_nom': 'NOM NOM',
+                'slingshot': '*wind noises or something*',
+                'spaghetti': 'Yummy spaghetti!!',
+                'number_one': "I'm number 1",
+                'time_warp': 'Time warp',
+                'za_warldo': 'ZA WORLDO!'
+            };
             let unlockedAchievements = new Set();
 
 
@@ -446,7 +536,6 @@
 
                 // Phase 3: Collision Detection & Resolution
                 const bodiesToDestroy = new Set();
-                const bodyDensityType = { 'black-hole': 3, 'star': 2, 'planet': 1 };
                 let supernovaEvents = [];
 
                 for (let i = 0; i < currentGalaxy.bodies.length; i++) {
@@ -463,22 +552,26 @@
                         const collisionDist = (bodyA.size / 2) + (bodyB.size / 2);
 
                         if (dist < collisionDist) {
-                            const pA = bodyDensityType[bodyA.type];
-                            const pB = bodyDensityType[bodyB.type];
-                            
                             let survivor, victim;
                             
-                            if (pA > pB) {
-                                survivor = bodyA; 
-                                victim = bodyB;
-                            } else if (pB > pA) {
-                                survivor = bodyB;
-                                victim = bodyA;
+                            // ** NEW: Realistic Density Logic **
+                            if (bodyA.type === 'black-hole') {
+                                survivor = bodyA; victim = bodyB;
+                            } else if (bodyB.type === 'black-hole') {
+                                survivor = bodyB; victim = bodyA;
                             } else {
-                                const densityA = bodyA.mass / (bodyA.size * bodyA.size);
-                                const densityB = bodyB.mass / (bodyB.size * bodyB.size);
-                                survivor = (densityA > densityB) ? bodyA : bodyB;
-                                victim = (densityA > densityB) ? bodyB : bodyA;
+                                // Neither is a black hole, check real density
+                                // Density = Mass / Area (Area is proportional to size^2)
+                                const densityA = bodyA.mass / (bodyA.size * bodyA.size || 1);
+                                const densityB = bodyB.mass / (bodyB.size * bodyB.size || 1);
+                                
+                                if (densityA >= densityB) {
+                                    survivor = bodyA;
+                                    victim = bodyB;
+                                } else {
+                                    survivor = bodyB;
+                                    victim = bodyA;
+                                }
                             }
                             
                             mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
@@ -528,11 +621,15 @@
              * ** UPDATED: mergeBodies now triggers achievements **
              */
             function mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents) {
-                // ** ACHIEVEMENT TRIGGER: "NOM NOM" **
-                if ((survivor.type === 'star' || survivor.type === 'black-hole') && victim.type === 'planet') {
+                // ** ACHIEVEMENT TRIGGERS **
+                if (survivor.type === 'black-hole' && victim.type === 'planet') {
+                    unlockAchievement('spaghetti', 'Yummy spaghetti!!');
+                } else if (survivor.type === 'star' && victim.type === 'planet') {
                     unlockAchievement('nom_nom', 'NOM NOM');
+                } else if (survivor.type === 'planet' && victim.type === 'star') {
+                    unlockAchievement('number_one', "I'm number 1");
                 }
-            
+
                 if (survivor.type === 'black-hole') {
                     survivor.isStatic = false; 
                 }
@@ -865,6 +962,51 @@
                     achievementToastEl.classList.remove('show');
                 }, 4000); // 4 seconds
             }
+            
+            // ** NEW: Achievement Menu Functions **
+            function populateAchievementsMenu() {
+                achievementList.innerHTML = ''; // Clear old list
+                
+                for (const id in ALL_ACHIEVEMENTS) {
+                    const name = ALL_ACHIEVEMENTS[id];
+                    const li = document.createElement('li');
+                    
+                    if (unlockedAchievements.has(id)) {
+                        li.textContent = `🏆 ${name}`;
+                    } else {
+                        li.textContent = `🔒 ${name}`;
+                        li.classList.add('locked');
+                    }
+                    achievementList.appendChild(li);
+                }
+            }
+            
+            function showAchievementsMenu() {
+                populateAchievementsMenu();
+                achievementMenuModal.style.display = 'flex';
+            }
+            
+            function hideAchievementsMenu() {
+                achievementMenuModal.style.display = 'none';
+            }
+            
+            // --- Achievement Menu Listeners ---
+            viewAchievementsBtn.addEventListener('click', showAchievementsMenu);
+            closeAchievementsBtn.addEventListener('click', hideAchievementsMenu);
+            deleteAchievementsBtn.addEventListener('click', () => {
+                if (confirm('Are you sure you want to delete all achievement progress? This cannot be undone.')) {
+                    unlockedAchievements.clear();
+                    saveAchievements();
+                    populateAchievementsMenu(); // Refresh the list
+                }
+            });
+            // Click background to close
+            achievementMenuModal.addEventListener('click', (e) => {
+                if (e.target === achievementMenuModal) {
+                    hideAchievementsMenu();
+                }
+            });
+
 
             
             // === 5. MOUSE CONTROLS (with Slingshot) ===
@@ -955,7 +1097,6 @@
                     selectedBody.vx = vX;
                     selectedBody.vy = vY;
                     
-                    // ** ACHIEVEMENT TRIGGER: "Slingshot" **
                     unlockAchievement('slingshot', '*wind noises or something*');
                     
                     isDraggingSlingshot = false;
@@ -972,13 +1113,15 @@
             });
             
             
-            // --- Simulation Control Listeners ---
+            // --- ** UPDATED: Simulation Control Listeners ** ---
             
             pauseBtn.addEventListener('click', () => {
                 isPaused = !isPaused; 
                 if (isPaused) {
                     pauseBtn.innerHTML = '►'; 
                     pauseBtn.title = 'Resume';
+                    // ** ACHIEVEMENT TRIGGER: "ZA WORLDO!" **
+                    unlockAchievement('za_warldo', 'ZA WORLDO!');
                 } else {
                     pauseBtn.innerHTML = '❚❚'; 
                     pauseBtn.title = 'Pause';
@@ -989,6 +1132,8 @@
             speedUpBtn.addEventListener('click', () => {
                 timeScale += timeScaleStep;
                 updateSpeedDisplay();
+                // ** ACHIEVEMENT TRIGGER: "Time warp" **
+                unlockAchievement('time_warp', 'Time warp');
             });
             
             slowDownBtn.addEventListener('click', () => {
@@ -998,6 +1143,8 @@
                     timeScale = timeScaleStep; 
                 }
                 updateSpeedDisplay();
+                // ** ACHIEVEMENT TRIGGER: "Time warp" **
+                unlockAchievement('time_warp', 'Time warp');
             });
             
             function updateSpeedDisplay() {
@@ -1007,7 +1154,7 @@
 
             // === 6. START THE SIMULATOR ===
             populateLoadMenu();
-            loadAchievements(); // ** NEW: Load saved achievements **
+            loadAchievements(); // ** Load saved achievements **
             updateAddForm(); 
             requestAnimationFrame(simulationLoop); 
         });
