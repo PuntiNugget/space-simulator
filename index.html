@@ -112,7 +112,6 @@
             box-shadow: 0 0 20px #ff8c00, 0 0 30px #ff4500;
         }
         
-        /* ** NEW: Neutron Star Style ** */
         .neutron-star {
             background-color: #aaccff;
             box-shadow: 0 0 15px #fff, 0 0 25px #aaccff;
@@ -149,6 +148,26 @@
             white-space: nowrap;
             pointer-events: none;
             user-select: none;
+        }
+        
+        /* ** NEW: Satellite Styles ** */
+        .satellite-container {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            top: 50%;
+            left: 50%;
+            /* This container itself doesn't move */
+        }
+        .satellite {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: #ccc;
+            border: 1px solid #fff;
+            border-radius: 50%;
+            /* Transform origin is the center of the planet */
+            transform-origin: 0 0;
         }
         
 
@@ -504,7 +523,8 @@
                 'number_one': "I'm number 1",
                 'time_warp': 'Time warp',
                 'za_warldo': 'ZA WORLDO!',
-                'kilonova': 'Kilonova!' // ** NEW **
+                'kilonova': 'Kilonova!',
+                'civilization': "It's Alive!" // ** NEW **
             };
             let unlockedAchievements = new Set();
 
@@ -522,10 +542,11 @@
             }
 
             function updatePhysics() {
-                const blackHoles = currentGalaxy.bodies.filter(b => b.type === 'black-hole');
+                // ** UPDATED: Gravity wells are now BHs and Neutron Stars **
+                const gravityWells = currentGalaxy.bodies.filter(b => b.type === 'black-hole' || b.type === 'neutron-star');
                 const subTimeStep = timeScale / PHYSICS_SUB_STEPS;
+                let bodiesToAdd = []; // For kilonova & satellites
                 
-                // ** Run physics calculations multiple times for stability **
                 for (let s = 0; s < PHYSICS_SUB_STEPS; s++) {
                     
                     // Phase 1: Calculate all forces
@@ -559,28 +580,29 @@
                         body.y += body.vy * subTimeStep;
                     }
 
-                    // Phase 2.5: Black Hole Orbital Decay (Spiral)
-                    if (blackHoles.length > 0) {
+                    // Phase 2.5: Orbital Decay (Spiral)
+                    if (gravityWells.length > 0) {
                         for (const body of currentGalaxy.bodies) {
-                            if (body.isStatic || body.type === 'black-hole') continue;
+                            if (body.isStatic || body.type === 'black-hole' || body.type === 'neutron-star') continue;
 
-                            let closestBH = null;
+                            let closestWell = null;
                             let minDistSq = Infinity;
-                            for (const bh of blackHoles) {
-                                const dx = bh.x - body.x;
-                                const dy = bh.y - body.y;
+                            for (const well of gravityWells) {
+                                const dx = well.x - body.x;
+                                const dy = well.y - body.y;
                                 const distSq = (dx * dx + dy * dy);
                                 if (distSq < minDistSq) {
                                     minDistSq = distSq;
-                                    closestBH = bh;
+                                    closestWell = well;
                                 }
                             }
 
-                            if (closestBH) {
-                                const pullRadiusSq = Math.pow(closestBH.mass / 10, 2); 
+                            if (closestWell) {
+                                // ** Use the well's mass for pull radius **
+                                const pullRadiusSq = Math.pow(closestWell.mass / 10, 2); 
                                 if (minDistSq < pullRadiusSq) {
                                     const dragFactor = (pullRadiusSq - minDistSq) / pullRadiusSq; 
-                                    const decay = 1.0 - (0.005 * dragFactor * subTimeStep); // Use subTimeStep
+                                    const decay = 1.0 - (0.005 * dragFactor * subTimeStep); 
                                     body.vx *= decay;
                                     body.vy *= decay;
                                 }
@@ -598,7 +620,7 @@
                 
                 // --- These things run ONCE per frame, after physics ---
                 
-                // Phase 2.6: Habitable Planet Population Growth
+                // Phase 2.6: Habitable Planet Population/Intel Growth
                 if (currentGalaxy.bodies.length > 1) {
                     let centralBody = currentGalaxy.bodies[0];
                     for(let i=1; i<currentGalaxy.bodies.length; i++) {
@@ -613,9 +635,22 @@
                             const dy = body.y - centralBody.y;
                             const currentAngle = Math.atan2(dy, dx);
                             
+                            // Check for crossover (one full orbit)
                             if (body.lastAngle > 0 && currentAngle <= 0) {
+                                // Grow Population
                                 const growth = Math.floor(Math.random() * 1000) + 1;
                                 body.population += growth;
+                                
+                                // ** Grow Intelligence **
+                                if (body.population > 5000) {
+                                    body.intelligence = (body.intelligence || 0) + (Math.random() * 0.5);
+                                }
+                                
+                                // ** Check for Satellite launch **
+                                if (body.intelligence >= 50 && !body.hasSatellites) {
+                                    body.hasSatellites = true; // Flag to stop spawning
+                                    unlockAchievement('civilization', "It's Alive!");
+                                }
                             }
                             body.lastAngle = currentAngle;
                         }
@@ -625,7 +660,6 @@
 
                 // Phase 3: Collision Detection & Resolution
                 const bodiesToDestroy = new Set();
-                const bodiesToAdd = []; // ** NEW: For kilonova **
                 let supernovaEvents = [];
 
                 for (let i = 0; i < currentGalaxy.bodies.length; i++) {
@@ -646,11 +680,10 @@
                             const isA_NS = bodyA.type === 'neutron-star';
                             const isB_NS = bodyB.type === 'neutron-star';
                             
-                            // --- Check for special collision types FIRST ---
+                            // ** UPDATED HIERARCHY **
                             if (isA_NS && isB_NS) {
-                                // ** Kilonova Event! **
                                 handleKilonova(bodyA, bodyB, bodiesToDestroy, bodiesToAdd);
-                                continue; // Skip all other logic for this pair
+                                continue; 
                             
                             } else if (bodyA.type === 'black-hole') {
                                 survivor = bodyA; victim = bodyB;
@@ -735,7 +768,7 @@
                     }
                 }
                 
-                // ** NEW: Add newly created bodies (from kilonova) **
+                // Add newly created bodies
                 if (bodiesToAdd.length > 0) {
                     currentGalaxy.bodies.push(...bodiesToAdd);
                 }
@@ -773,7 +806,9 @@
                     isStatic: false,
                     isHabitable: false,
                     population: 0,
-                    lastAngle: 0
+                    lastAngle: 0,
+                    intelligence: 0,
+                    hasSatellites: false
                 };
                 bodiesToAdd.push(newBH);
                 unlockAchievement('kilonova', 'Kilonova!');
@@ -802,7 +837,6 @@
                 const vicType = victim.type;
                 const survType = survivor.type;
 
-                // ** UPDATED: Achievement Triggers **
                 if (survType === 'black-hole' && vicType !== 'black-hole') {
                     unlockAchievement('spaghetti', 'Yummy spaghetti!!');
                 } else if ((survType === 'star' || survType === 'neutron-star') && (vicType === 'planet' || vicType === 'habitable-planet')) {
@@ -842,7 +876,7 @@
             }
 
             /**
-             * Renders bodies, particles, and zoom
+             * ** UPDATED: Renders bodies, particles, and satellites **
              */
             function renderGalaxy() {
                 const viewX = -viewport.x + 300;
@@ -854,8 +888,7 @@
                 // --- 1. Render Bodies ---
                 for (const body of currentGalaxy.bodies) {
                     let el = bodyElements.get(body.id);
-                    let indicatorEl;
-                    let labelEl; 
+                    let indicatorEl, labelEl, satContainer; 
                     
                     if (!el) {
                         el = document.createElement('div');
@@ -867,6 +900,10 @@
                             labelEl = document.createElement('div');
                             labelEl.className = 'population-label';
                             el.appendChild(labelEl);
+                            // ** Add satellite container **
+                            satContainer = document.createElement('div');
+                            satContainer.className = 'satellite-container';
+                            el.appendChild(satContainer);
                         }
                         
                         bodyElements.set(body.id, el);
@@ -874,6 +911,7 @@
                     } else {
                         indicatorEl = el.querySelector('.gravity-indicator');
                         labelEl = el.querySelector('.population-label'); 
+                        satContainer = el.querySelector('.satellite-container');
                     }
                     
                     el.className = 'celestial-body ' + body.type;
@@ -907,6 +945,7 @@
                                 
                                 el.style.backgroundColor = 'transparent';
                                 if (labelEl) labelEl.style.display = 'none'; 
+                                if (satContainer) satContainer.style.display = 'none';
                                 el.style.width = `${body.size}px`; 
                                 el.style.height = `${body.size}px`;
                                 
@@ -925,6 +964,7 @@
                     if (!isSpaghettified) {
                         el.style.backgroundColor = body.color;
                         if (labelEl) labelEl.style.display = 'block'; 
+                        if (satContainer) satContainer.style.display = 'block';
                         el.style.width = `${body.size}px`;
                         el.style.height = `${body.size}px`;
                         
@@ -938,8 +978,31 @@
                     }
                     
                     if (labelEl && body.isHabitable) {
-                        labelEl.textContent = `Pop: ${body.population.toLocaleString()}`;
+                        labelEl.textContent = `Pop: ${body.population.toLocaleString()} Int: ${body.intelligence.toFixed(1)}`;
                     }
+                    
+                    // ** NEW: Spawn & Animate Satellites **
+                    if (satContainer) {
+                        // Spawn satellites if they have been unlocked but not created
+                        if (body.hasSatellites && satContainer.childElementCount === 0) {
+                            for (let i = 0; i < 3; i++) {
+                                const satEl = document.createElement('div');
+                                satEl.className = 'satellite';
+                                satContainer.appendChild(satEl);
+                            }
+                        }
+                        
+                        // Animate existing satellites
+                        if (satContainer.childElementCount > 0) {
+                            const satellites = satContainer.querySelectorAll('.satellite');
+                            satellites.forEach((sat, i) => {
+                                const angle = (Date.now() / 1000) * (1 + i * 0.5);
+                                const orbit = (body.size / 2) + 6 + (i * 4);
+                                sat.style.transform = `rotate(${angle}rad) translateX(${orbit}px)`;
+                            });
+                        }
+                    }
+                    
                     
                     el.style.transform = transform;
 
@@ -989,7 +1052,7 @@
             toolPanBtn.onclick = () => setActiveTool('pan');
             toolPickerBtn.onclick = () => setActiveTool('picker');
 
-            // --- ** UPDATED: Smart Form Function ** ---
+            // --- Smart Form Function ---
             function updateAddForm() {
                 const type = bodyTypeSelect.value;
                 if (type === 'star') {
@@ -1036,7 +1099,7 @@
             bodyTypeSelect.addEventListener('change', updateAddForm);
             
             
-            // --- ** UPDATED: Add Body Listener (with defaults) ** ---
+            // --- Add Body Listener (with defaults) ---
             addBodyBtn.addEventListener('click', () => {
                 const type = bodyTypeSelect.value;
                 const rawMass = bodyMassInput.value;
@@ -1051,7 +1114,9 @@
                     isStatic: bodyStaticInput.checked,
                     isHabitable: false,
                     population: 0,
-                    lastAngle: 0
+                    lastAngle: 0,
+                    intelligence: 0, // ** NEW **
+                    hasSatellites: false // ** NEW **
                 };
 
                 if (type === 'star') {
@@ -1169,7 +1234,7 @@
                     selectionInfoPanel.style.display = 'block';
                     let name = `${body.type} (Mass: ${body.mass.toFixed(0)})`;
                     if (body.isHabitable) {
-                        name += ` (Pop: ${body.population.toLocaleString()})`;
+                        name += ` (Pop: ${body.population.toLocaleString()} Int: ${body.intelligence.toFixed(1)})`;
                     }
                     selectionName.textContent = name;
                 } else {
