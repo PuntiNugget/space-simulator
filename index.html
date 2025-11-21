@@ -495,7 +495,7 @@
             const achievementList = document.getElementById('achievement-list');
             const deleteAchievementsBtn = document.getElementById('delete-achievements-btn');
             
-            // ** NEW: Graph elements **
+            // Graph elements
             const graphContainer = document.getElementById('population-graph-container');
             let populationChart = null; // Will hold the Chart.js object
 
@@ -506,10 +506,13 @@
             let viewport = { x: 0, y: 0, scale: 1.0 };
             const G = 1;
             const PLANET_TO_STAR_MASS_THRESHOLD = 750;
-            const SLINGSHOT_POWER = 0.1;
+            const SLINGSHOT_POWER = 0.02; // ** REDUCED POWER for visible gravity **
             const ZOOM_STEP = 0.1;
             const PHYSICS_SUB_STEPS = 5;
-            const POP_GROWTH_PER_SECOND = 10; // ** NEW: Continuous linear growth **
+            
+            // ** NEW: Continuous Exponential Growth Rates **
+            const POP_GROWTH_RATE_PER_SEC = 0.01; // 1% per second
+            const INT_GROWTH_RATE_PER_SEC = 0.005; // 0.5% per second
             
             let currentGalaxy = {
                 bodies: [],
@@ -560,21 +563,19 @@
                 
                 updatePhysics();
                 
-                // ** NEW: Graph Update Logic **
+                // Update graph
                 if (populationChart && selectedBody && selectedBody.isHabitable) {
                     const history = selectedBody.populationHistory;
                     const newPop = selectedBody.population;
                     history.push(newPop);
 
-                    // Limit history to 50 data points
                     while (history.length > 50) {
                         history.shift();
                     }
                     
-                    // Update the chart
-                    populationChart.data.labels = history.map(() => ''); // Empty labels
+                    populationChart.data.labels = history.map(() => ''); 
                     populationChart.data.datasets[0].data = history;
-                    populationChart.update('none'); // 'none' = no animation
+                    populationChart.update('none'); 
                 }
                 
                 renderGalaxy();
@@ -607,7 +608,7 @@
                         }
                     }
 
-                    // Phase 2: Apply physics (move bodies)
+                    // Phase 2: Apply physics & growth
                     for (const body of currentGalaxy.bodies) {
                         if (body.isStatic || (isDraggingSlingshot && selectedBody && body.id === selectedBody.id)) {
                             continue;
@@ -626,9 +627,18 @@
                             }
                         }
                         
-                        // ** NEW: Continuous Linear Population Growth **
+                        // ** UPDATED: Continuous Exponential Growth **
                         if (body.isHabitable && body.population > 0) {
-                            body.population += (POP_GROWTH_PER_SECOND * subTimeStep);
+                            // Exponential population growth
+                            const popGrowth = body.population * (POP_GROWTH_RATE_PER_SEC * subTimeStep);
+                            body.population += popGrowth;
+                            
+                            // Exponential intelligence growth (if conditions are met)
+                            if (body.population > 5000) {
+                                if (body.intelligence < 1) body.intelligence = 1; // Kick-start
+                                const intelGrowth = body.intelligence * (INT_GROWTH_RATE_PER_SEC * subTimeStep);
+                                body.intelligence += intelGrowth;
+                            }
                         }
                     }
 
@@ -669,43 +679,7 @@
                     }
                 } // ** End of sub-step loop **
                 
-                // --- These things run ONCE per frame, after physics ---
                 
-                // Phase 2.6: Habitable Planet *Intelligence* Growth (per orbit)
-                if (currentGalaxy.bodies.length > 1) {
-                    let centralBody = currentGalaxy.bodies[0];
-                    for(let i=1; i<currentGalaxy.bodies.length; i++) {
-                        if(currentGalaxy.bodies[i].mass > centralBody.mass) {
-                            centralBody = currentGalaxy.bodies[i];
-                        }
-                    }
-                    
-                    for (const body of currentGalaxy.bodies) {
-                        if (body.isHabitable && body.id !== centralBody.id) {
-                            const dx = body.x - centralBody.x;
-                            const dy = body.y - centralBody.y;
-                            const currentAngle = Math.atan2(dy, dx);
-                            
-                            // Check for crossover (one full orbit)
-                            if (body.lastAngle > 0 && currentAngle <= 0) {
-                                // ** Intelligence Growth **
-                                if (body.population > 5000) {
-                                    if (body.intelligence < 1) body.intelligence = 1; // Start
-                                    body.intelligence *= (1.0 + Math.random() * 0.04 + 0.01); // 1-5%
-                                }
-                                
-                                // ** Check for Satellite launch **
-                                if (body.intelligence >= 50 && !body.hasSatellites) {
-                                    body.hasSatellites = true; // Flag to stop spawning
-                                    unlockAchievement('civilization', "It's Alive!");
-                                }
-                            }
-                            body.lastAngle = currentAngle;
-                        }
-                    }
-                }
-
-
                 // Phase 3: Collision Detection & Resolution
                 let supernovaEvents = [];
 
@@ -920,7 +894,7 @@
                     y = viewport.y + (Math.random() - 0.5) * 800;
                 }
                 
-                const speed = (Math.random() * 5 + 5); // Speed is now independent of timeScale
+                const speed = (Math.random() * 5 + 5);
                 const angle = Math.atan2(targetY - y, targetX - x);
                 vx = Math.cos(angle) * speed;
                 vy = Math.sin(angle) * speed;
@@ -967,7 +941,7 @@
                 
                 if (survivor.isHabitable && victim.isHabitable) {
                     survivor.population += victim.population;
-                    survivor.populationHistory.push(...victim.populationHistory); // Combine history
+                    survivor.populationHistory.push(...victim.populationHistory); 
                 }
                 
                 bodiesToDestroy.add(victim.id);
@@ -1088,7 +1062,14 @@
                         labelEl.textContent = `Pop: ${body.population.toLocaleString(undefined, { maximumFractionDigits: 0 })} Int: ${body.intelligence.toFixed(1)}`;
                     }
                     
+                    // ** UPDATED: Satellite logic moved here **
                     if (satContainer) {
+                        // Check for satellite launch (runs once per frame)
+                        if (body.isHabitable && body.intelligence >= 50 && !body.hasSatellites) {
+                            body.hasSatellites = true;
+                            unlockAchievement('civilization', "It's Alive!");
+                        }
+                    
                         if (body.hasSatellites && satContainer.childElementCount === 0) {
                             for (let i = 0; i < 3; i++) {
                                 const satEl = document.createElement('div');
@@ -1221,7 +1202,7 @@
                     lastAngle: 0,
                     intelligence: 0,
                     hasSatellites: false,
-                    populationHistory: [] // ** NEW: Add history for graph **
+                    populationHistory: [] // ** Add history for graph **
                 };
 
                 if (type === 'star') {
@@ -1289,7 +1270,6 @@
                 const savedData = JSON.parse(localStorage.getItem(galaxyName));
                 clearAll(); 
                 currentGalaxy.bodies = savedData.bodies;
-                // ** Handle loading old saves that don't have new properties **
                 currentGalaxy.bodies.forEach(body => {
                     body.populationHistory = body.populationHistory || [];
                     body.intelligence = body.intelligence || 0;
@@ -1339,11 +1319,9 @@
                 }
             });
             
-            // ** UPDATED: SelectBody now handles the graph **
             function selectBody(body) {
                 selectedBody = body;
                 
-                // Destroy old chart if it exists
                 if (populationChart) {
                     populationChart.destroy();
                     populationChart = null;
@@ -1354,7 +1332,6 @@
                     let name = `${body.type} (Mass: ${body.mass.toFixed(0)})`;
                     if (body.isHabitable) {
                         name += ` (Pop: ${body.population.toLocaleString(undefined, { maximumFractionDigits: 0 })} Int: ${body.intelligence.toFixed(1)})`;
-                        // ** NEW: Show and create graph **
                         graphContainer.style.display = 'block';
                         initPopulationChart(body);
                     } else {
@@ -1368,7 +1345,6 @@
                 }
             }
             
-            // ** NEW: Graph Creation Function **
             function initPopulationChart(body) {
                 const ctx = document.getElementById('population-chart').getContext('2d');
                 const history = body.populationHistory || [];
@@ -1390,7 +1366,7 @@
                     options: {
                         scales: {
                             y: {
-                                beginAtZero: true,
+                                beginAtZero: false, // Start at lowest data point
                                 ticks: { color: '#fff' }
                             },
                             x: {
@@ -1400,7 +1376,7 @@
                         plugins: {
                             legend: { display: false }
                         },
-                        animation: false // Turn off animation for performance
+                        animation: false 
                     }
                 });
             }
