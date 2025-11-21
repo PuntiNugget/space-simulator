@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Physics Galaxy Simulator</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
         /* Basic page setup */
@@ -117,7 +118,6 @@
             box-shadow: 0 0 15px #fff, 0 0 25px #aaccff;
         }
         
-        /* ** NEW: Meteor Style ** */
         .meteor {
             background-color: #666;
             border: 1px solid #aaa;
@@ -326,7 +326,6 @@
             margin-bottom: 8px;
             border-radius: 4px;
         }
-        /* Style for locked achievements */
         #achievement-list li.locked {
             color: #777;
             font-style: italic;
@@ -429,7 +428,10 @@
             <fieldset id="selection-info" style="display: none;">
                 <legend>Selection Info</legend>
                 <div id="selection-name" style="margin-bottom: 10px;"></div>
-                <button id="delete-btn" style="background-color: #c1440e;">Delete Body</button>
+                <div id="population-graph-container" style="display: none; margin-top: 10px;">
+                    <canvas id="population-chart"></canvas>
+                </div>
+                <button id="delete-btn" style="background-color: #c1440e; margin-top: 10px;">Delete Body</button>
             </fieldset>
         </div>
 
@@ -492,6 +494,10 @@
             const closeAchievementsBtn = document.getElementById('close-achievements-btn');
             const achievementList = document.getElementById('achievement-list');
             const deleteAchievementsBtn = document.getElementById('delete-achievements-btn');
+            
+            // ** NEW: Graph elements **
+            const graphContainer = document.getElementById('population-graph-container');
+            let populationChart = null; // Will hold the Chart.js object
 
 
             // === 2. CORE SIMULATION STATE ===
@@ -503,6 +509,7 @@
             const SLINGSHOT_POWER = 0.1;
             const ZOOM_STEP = 0.1;
             const PHYSICS_SUB_STEPS = 5;
+            const POP_GROWTH_PER_SECOND = 10; // ** NEW: Continuous linear growth **
             
             let currentGalaxy = {
                 bodies: [],
@@ -519,10 +526,9 @@
             let timeScale = 1.0;
             const timeScaleStep = 0.25;
             
-            // ** NEW: Meteor Spawner State **
             let lastMeteorCheck = Date.now();
-            const METEOR_CHECK_INTERVAL = 10000; // 10 seconds
-            const METEOR_SPAWN_CHANCE = 0.03; // 3%
+            const METEOR_CHECK_INTERVAL = 10000;
+            const METEOR_SPAWN_CHANCE = 0.03;
             
             const ALL_ACHIEVEMENTS = {
                 'nom_nom': 'NOM NOM',
@@ -544,7 +550,6 @@
                     return;
                 }
                 
-                // ** NEW: Meteor Spawner **
                 const now = Date.now();
                 if (now - lastMeteorCheck > METEOR_CHECK_INTERVAL) {
                     lastMeteorCheck = now;
@@ -554,12 +559,29 @@
                 }
                 
                 updatePhysics();
+                
+                // ** NEW: Graph Update Logic **
+                if (populationChart && selectedBody && selectedBody.isHabitable) {
+                    const history = selectedBody.populationHistory;
+                    const newPop = selectedBody.population;
+                    history.push(newPop);
+
+                    // Limit history to 50 data points
+                    while (history.length > 50) {
+                        history.shift();
+                    }
+                    
+                    // Update the chart
+                    populationChart.data.labels = history.map(() => ''); // Empty labels
+                    populationChart.data.datasets[0].data = history;
+                    populationChart.update('none'); // 'none' = no animation
+                }
+                
                 renderGalaxy();
                 requestAnimationFrame(simulationLoop);
             }
 
             function updatePhysics() {
-                // ** UPDATED: Gravity wells are BHs and Neutron Stars **
                 const gravityWells = currentGalaxy.bodies.filter(b => b.type === 'black-hole' || b.type === 'neutron-star');
                 const subTimeStep = timeScale / PHYSICS_SUB_STEPS;
                 let bodiesToAdd = []; 
@@ -597,12 +619,16 @@
                         body.x += body.vx * subTimeStep;
                         body.y += body.vy * subTimeStep;
                         
-                        // ** NEW: Meteor lifetime **
                         if (body.type === 'meteor') {
                             body.life -= subTimeStep;
                             if (body.life <= 0) {
                                 bodiesToDestroy.add(body.id);
                             }
+                        }
+                        
+                        // ** NEW: Continuous Linear Population Growth **
+                        if (body.isHabitable && body.population > 0) {
+                            body.population += (POP_GROWTH_PER_SECOND * subTimeStep);
                         }
                     }
 
@@ -639,13 +665,13 @@
                     for (const p of currentGalaxy.particles) {
                         p.x += p.vx * subTimeStep;
                         p.y += p.vy * subTimeStep;
-                        p.life -= 0.02 * subTimeStep; // Fade over time
+                        p.life -= 0.02 * subTimeStep; 
                     }
                 } // ** End of sub-step loop **
                 
                 // --- These things run ONCE per frame, after physics ---
                 
-                // Phase 2.6: Habitable Planet Population/Intel Growth
+                // Phase 2.6: Habitable Planet *Intelligence* Growth (per orbit)
                 if (currentGalaxy.bodies.length > 1) {
                     let centralBody = currentGalaxy.bodies[0];
                     for(let i=1; i<currentGalaxy.bodies.length; i++) {
@@ -660,13 +686,9 @@
                             const dy = body.y - centralBody.y;
                             const currentAngle = Math.atan2(dy, dx);
                             
+                            // Check for crossover (one full orbit)
                             if (body.lastAngle > 0 && currentAngle <= 0) {
-                                // ** Exponential Population Growth **
-                                const popGrowthRate = Math.random() * 0.05; // 0-5%
-                                body.population *= (1.0 + popGrowthRate);
-                                body.population = Math.floor(body.population);
-                                
-                                // ** Exponential Intelligence Growth **
+                                // ** Intelligence Growth **
                                 if (body.population > 5000) {
                                     if (body.intelligence < 1) body.intelligence = 1; // Start
                                     body.intelligence *= (1.0 + Math.random() * 0.04 + 0.01); // 1-5%
@@ -706,8 +728,6 @@
                             const isB_NS = bodyB.type === 'neutron-star';
                             const isA_Meteor = bodyA.type === 'meteor';
                             const isB_Meteor = bodyB.type === 'meteor';
-                            
-                            // ** NEW: Collision Hierarchy **
                             
                             // 1. Meteor Collisions (always die)
                             if (isA_Meteor || isB_Meteor) {
@@ -828,9 +848,6 @@
                 });
             }
             
-            /**
-             * ** NEW: Kilonova Handler **
-             */
             function handleKilonova(bodyA, bodyB, bodiesToDestroy, bodiesToAdd) {
                 bodiesToDestroy.add(bodyA.id);
                 bodiesToDestroy.add(bodyB.id);
@@ -840,7 +857,7 @@
                     id: Date.now(),
                     type: 'black-hole',
                     mass: newMass,
-                    size: 30, // Default BH size
+                    size: 30, 
                     x: (bodyA.x + bodyB.x) / 2,
                     y: (bodyA.y + bodyB.y) / 2,
                     vx: ((bodyA.mass * bodyA.vx) + (bodyB.mass * bodyB.vx)) / newMass,
@@ -851,7 +868,8 @@
                     population: 0,
                     lastAngle: 0,
                     intelligence: 0,
-                    hasSatellites: false
+                    hasSatellites: false,
+                    populationHistory: []
                 };
                 bodiesToAdd.push(newBH);
                 unlockAchievement('kilonova', 'Kilonova!');
@@ -861,7 +879,7 @@
                 const numParticles = 20;
                 for (let i = 0; i < numParticles; i++) {
                     const angle = Math.random() * 2 * Math.PI;
-                    const speed = Math.random() * 3 + 1; // Random speed
+                    const speed = Math.random() * 3 + 1; 
                     
                     const particle = {
                         id: Date.now() + Math.random(),
@@ -869,26 +887,22 @@
                         y: y,
                         vx: Math.cos(angle) * speed,
                         vy: Math.sin(angle) * speed,
-                        life: 1.0, // 1 second lifetime
+                        life: 1.0, 
                         color: (i % 2 === 0) ? color1 : color2
                     };
                     currentGalaxy.particles.push(particle);
                 }
             }
             
-            /**
-             * ** NEW: Meteor Spawner **
-             */
             function spawnMeteor() {
                 const size = Math.random() * 5 + 3; // 3-8px
-                const mass = size * 2; // Low mass
+                const mass = size * 2; 
                 
                 const side = Math.floor(Math.random() * 4);
-                const spawnDist = 400 / viewport.scale; // 400px away from center
+                const spawnDist = 400 / viewport.scale; 
                 
                 let x, y, vx, vy;
                 
-                // Target a random point near the center
                 const targetX = viewport.x + (Math.random() - 0.5) * 200;
                 const targetY = viewport.y + (Math.random() - 0.5) * 200;
 
@@ -906,13 +920,13 @@
                     y = viewport.y + (Math.random() - 0.5) * 800;
                 }
                 
-                const speed = (Math.random() * 5 + 5) * timeScale;
+                const speed = (Math.random() * 5 + 5); // Speed is now independent of timeScale
                 const angle = Math.atan2(targetY - y, targetX - x);
                 vx = Math.cos(angle) * speed;
                 vy = Math.sin(angle) * speed;
 
                 const meteor = {
-                    id: Date.now() + Math.random(), // Unique ID
+                    id: Date.now() + Math.random(),
                     type: 'meteor',
                     mass: mass,
                     size: size,
@@ -921,6 +935,7 @@
                     isStatic: false,
                     isHabitable: false,
                     life: 30, // 30 seconds lifetime
+                    populationHistory: []
                 };
                 currentGalaxy.bodies.push(meteor);
             }
@@ -952,6 +967,7 @@
                 
                 if (survivor.isHabitable && victim.isHabitable) {
                     survivor.population += victim.population;
+                    survivor.populationHistory.push(...victim.populationHistory); // Combine history
                 }
                 
                 bodiesToDestroy.add(victim.id);
@@ -1069,7 +1085,7 @@
                     }
                     
                     if (labelEl && body.isHabitable) {
-                        labelEl.textContent = `Pop: ${body.population.toLocaleString()} Int: ${body.intelligence.toFixed(1)}`;
+                        labelEl.textContent = `Pop: ${body.population.toLocaleString(undefined, { maximumFractionDigits: 0 })} Int: ${body.intelligence.toFixed(1)}`;
                     }
                     
                     if (satContainer) {
@@ -1204,7 +1220,8 @@
                     population: 0,
                     lastAngle: 0,
                     intelligence: 0,
-                    hasSatellites: false
+                    hasSatellites: false,
+                    populationHistory: [] // ** NEW: Add history for graph **
                 };
 
                 if (type === 'star') {
@@ -1272,6 +1289,12 @@
                 const savedData = JSON.parse(localStorage.getItem(galaxyName));
                 clearAll(); 
                 currentGalaxy.bodies = savedData.bodies;
+                // ** Handle loading old saves that don't have new properties **
+                currentGalaxy.bodies.forEach(body => {
+                    body.populationHistory = body.populationHistory || [];
+                    body.intelligence = body.intelligence || 0;
+                    body.hasSatellites = body.hasSatellites || false;
+                });
                 viewport = savedData.viewport || { x: 0, y: 0, scale: 1.0 };
                 renderGalaxy(); 
                 alert(`Galaxy "${galaxyName}" loaded!`);
@@ -1316,20 +1339,72 @@
                 }
             });
             
+            // ** UPDATED: SelectBody now handles the graph **
             function selectBody(body) {
                 selectedBody = body;
+                
+                // Destroy old chart if it exists
+                if (populationChart) {
+                    populationChart.destroy();
+                    populationChart = null;
+                }
+                
                 if (body) {
                     selectionInfoPanel.style.display = 'block';
                     let name = `${body.type} (Mass: ${body.mass.toFixed(0)})`;
                     if (body.isHabitable) {
-                        name += ` (Pop: ${body.population.toLocaleString()} Int: ${body.intelligence.toFixed(1)})`;
+                        name += ` (Pop: ${body.population.toLocaleString(undefined, { maximumFractionDigits: 0 })} Int: ${body.intelligence.toFixed(1)})`;
+                        // ** NEW: Show and create graph **
+                        graphContainer.style.display = 'block';
+                        initPopulationChart(body);
+                    } else {
+                        graphContainer.style.display = 'none';
                     }
                     selectionName.textContent = name;
                 } else {
                     selectionInfoPanel.style.display = 'none';
                     selectionName.textContent = '';
+                    graphContainer.style.display = 'none';
                 }
             }
+            
+            // ** NEW: Graph Creation Function **
+            function initPopulationChart(body) {
+                const ctx = document.getElementById('population-chart').getContext('2d');
+                const history = body.populationHistory || [];
+                
+                populationChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: history.map(() => ''),
+                        datasets: [{
+                            label: 'Population',
+                            data: history,
+                            borderColor: '#2b9d4a',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            fill: true,
+                            backgroundColor: 'rgba(43, 157, 74, 0.3)'
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: { color: '#fff' }
+                            },
+                            x: {
+                                ticks: { display: false }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        animation: false // Turn off animation for performance
+                    }
+                });
+            }
+
 
             function findBodyAt(x, y) {
                 for (let i = currentGalaxy.bodies.length - 1; i >= 0; i--) {
