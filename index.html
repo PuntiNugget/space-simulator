@@ -116,6 +116,13 @@
             background-color: #aaccff;
             box-shadow: 0 0 15px #fff, 0 0 25px #aaccff;
         }
+        
+        /* ** NEW: Meteor Style ** */
+        .meteor {
+            background-color: #666;
+            border: 1px solid #aaa;
+            box-shadow: 0 0 5px #fff;
+        }
 
         .planet {
             background-color: #3d91f0;
@@ -150,14 +157,12 @@
             user-select: none;
         }
         
-        /* ** NEW: Satellite Styles ** */
         .satellite-container {
             position: absolute;
             width: 1px;
             height: 1px;
             top: 50%;
             left: 50%;
-            /* This container itself doesn't move */
         }
         .satellite {
             position: absolute;
@@ -166,7 +171,6 @@
             background: #ccc;
             border: 1px solid #fff;
             border-radius: 50%;
-            /* Transform origin is the center of the planet */
             transform-origin: 0 0;
         }
         
@@ -237,7 +241,6 @@
             width: 50px;
             font-size: 1.2em;
         }
-        /* Make text displays take up full width on their own row */
         .sim-controls span {
             width: 100%;
             text-align: center;
@@ -499,11 +502,11 @@
             const PLANET_TO_STAR_MASS_THRESHOLD = 750;
             const SLINGSHOT_POWER = 0.1;
             const ZOOM_STEP = 0.1;
-            const PHYSICS_SUB_STEPS = 5; // For stability
+            const PHYSICS_SUB_STEPS = 5;
             
             let currentGalaxy = {
                 bodies: [],
-                particles: [] // For crumble animation
+                particles: [] 
             };
             
             let bodyElements = new Map();
@@ -516,6 +519,11 @@
             let timeScale = 1.0;
             const timeScaleStep = 0.25;
             
+            // ** NEW: Meteor Spawner State **
+            let lastMeteorCheck = Date.now();
+            const METEOR_CHECK_INTERVAL = 10000; // 10 seconds
+            const METEOR_SPAWN_CHANCE = 0.03; // 3%
+            
             const ALL_ACHIEVEMENTS = {
                 'nom_nom': 'NOM NOM',
                 'slingshot': '*wind noises or something*',
@@ -524,7 +532,7 @@
                 'time_warp': 'Time warp',
                 'za_warldo': 'ZA WORLDO!',
                 'kilonova': 'Kilonova!',
-                'civilization': "It's Alive!" // ** NEW **
+                'civilization': "It's Alive!"
             };
             let unlockedAchievements = new Set();
 
@@ -536,16 +544,26 @@
                     return;
                 }
                 
+                // ** NEW: Meteor Spawner **
+                const now = Date.now();
+                if (now - lastMeteorCheck > METEOR_CHECK_INTERVAL) {
+                    lastMeteorCheck = now;
+                    if (Math.random() < METEOR_SPAWN_CHANCE) {
+                        spawnMeteor();
+                    }
+                }
+                
                 updatePhysics();
                 renderGalaxy();
                 requestAnimationFrame(simulationLoop);
             }
 
             function updatePhysics() {
-                // ** UPDATED: Gravity wells are now BHs and Neutron Stars **
+                // ** UPDATED: Gravity wells are BHs and Neutron Stars **
                 const gravityWells = currentGalaxy.bodies.filter(b => b.type === 'black-hole' || b.type === 'neutron-star');
                 const subTimeStep = timeScale / PHYSICS_SUB_STEPS;
-                let bodiesToAdd = []; // For kilonova & satellites
+                let bodiesToAdd = []; 
+                let bodiesToDestroy = new Set();
                 
                 for (let s = 0; s < PHYSICS_SUB_STEPS; s++) {
                     
@@ -578,6 +596,14 @@
                         body.vy += ay * subTimeStep;
                         body.x += body.vx * subTimeStep;
                         body.y += body.vy * subTimeStep;
+                        
+                        // ** NEW: Meteor lifetime **
+                        if (body.type === 'meteor') {
+                            body.life -= subTimeStep;
+                            if (body.life <= 0) {
+                                bodiesToDestroy.add(body.id);
+                            }
+                        }
                     }
 
                     // Phase 2.5: Orbital Decay (Spiral)
@@ -598,7 +624,6 @@
                             }
 
                             if (closestWell) {
-                                // ** Use the well's mass for pull radius **
                                 const pullRadiusSq = Math.pow(closestWell.mass / 10, 2); 
                                 if (minDistSq < pullRadiusSq) {
                                     const dragFactor = (pullRadiusSq - minDistSq) / pullRadiusSq; 
@@ -635,15 +660,16 @@
                             const dy = body.y - centralBody.y;
                             const currentAngle = Math.atan2(dy, dx);
                             
-                            // Check for crossover (one full orbit)
                             if (body.lastAngle > 0 && currentAngle <= 0) {
-                                // Grow Population
-                                const growth = Math.floor(Math.random() * 1000) + 1;
-                                body.population += growth;
+                                // ** Exponential Population Growth **
+                                const popGrowthRate = Math.random() * 0.05; // 0-5%
+                                body.population *= (1.0 + popGrowthRate);
+                                body.population = Math.floor(body.population);
                                 
-                                // ** Grow Intelligence **
+                                // ** Exponential Intelligence Growth **
                                 if (body.population > 5000) {
-                                    body.intelligence = (body.intelligence || 0) + (Math.random() * 0.5);
+                                    if (body.intelligence < 1) body.intelligence = 1; // Start
+                                    body.intelligence *= (1.0 + Math.random() * 0.04 + 0.01); // 1-5%
                                 }
                                 
                                 // ** Check for Satellite launch **
@@ -659,7 +685,6 @@
 
 
                 // Phase 3: Collision Detection & Resolution
-                const bodiesToDestroy = new Set();
                 let supernovaEvents = [];
 
                 for (let i = 0; i < currentGalaxy.bodies.length; i++) {
@@ -679,12 +704,29 @@
                             let survivor, victim;
                             const isA_NS = bodyA.type === 'neutron-star';
                             const isB_NS = bodyB.type === 'neutron-star';
+                            const isA_Meteor = bodyA.type === 'meteor';
+                            const isB_Meteor = bodyB.type === 'meteor';
                             
-                            // ** UPDATED HIERARCHY **
+                            // ** NEW: Collision Hierarchy **
+                            
+                            // 1. Meteor Collisions (always die)
+                            if (isA_Meteor || isB_Meteor) {
+                                const meteor = isA_Meteor ? bodyA : bodyB;
+                                const target = isA_Meteor ? bodyB : bodyA;
+                                bodiesToDestroy.add(meteor.id);
+                                if (target.isHabitable) {
+                                    target.population = Math.floor(target.population * 0.9); // 10% loss
+                                }
+                                spawnDebris(meteor.x, meteor.y, meteor.color, target.color);
+                                continue;
+                            }
+                            
+                            // 2. Kilonova
                             if (isA_NS && isB_NS) {
                                 handleKilonova(bodyA, bodyB, bodiesToDestroy, bodiesToAdd);
                                 continue; 
                             
+                            // 3. Black Hole wins all
                             } else if (bodyA.type === 'black-hole') {
                                 survivor = bodyA; victim = bodyB;
                                 mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
@@ -693,6 +735,7 @@
                                 survivor = bodyB; victim = bodyA;
                                 mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
                             
+                            // 4. Neutron Star wins non-BH
                             } else if (isA_NS) {
                                 survivor = bodyA; victim = bodyB;
                                 mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
@@ -833,6 +876,55 @@
                 }
             }
             
+            /**
+             * ** NEW: Meteor Spawner **
+             */
+            function spawnMeteor() {
+                const size = Math.random() * 5 + 3; // 3-8px
+                const mass = size * 2; // Low mass
+                
+                const side = Math.floor(Math.random() * 4);
+                const spawnDist = 400 / viewport.scale; // 400px away from center
+                
+                let x, y, vx, vy;
+                
+                // Target a random point near the center
+                const targetX = viewport.x + (Math.random() - 0.5) * 200;
+                const targetY = viewport.y + (Math.random() - 0.5) * 200;
+
+                if (side === 0) { // Top
+                    x = viewport.x + (Math.random() - 0.5) * 800;
+                    y = viewport.y - spawnDist;
+                } else if (side === 1) { // Right
+                    x = viewport.x + spawnDist;
+                    y = viewport.y + (Math.random() - 0.5) * 800;
+                } else if (side === 2) { // Bottom
+                    x = viewport.x + (Math.random() - 0.5) * 800;
+                    y = viewport.y + spawnDist;
+                } else { // Left
+                    x = viewport.x - spawnDist;
+                    y = viewport.y + (Math.random() - 0.5) * 800;
+                }
+                
+                const speed = (Math.random() * 5 + 5) * timeScale;
+                const angle = Math.atan2(targetY - y, targetX - x);
+                vx = Math.cos(angle) * speed;
+                vy = Math.sin(angle) * speed;
+
+                const meteor = {
+                    id: Date.now() + Math.random(), // Unique ID
+                    type: 'meteor',
+                    mass: mass,
+                    size: size,
+                    color: '#666',
+                    x: x, y: y, vx: vx, vy: vy, fx: 0, fy: 0,
+                    isStatic: false,
+                    isHabitable: false,
+                    life: 30, // 30 seconds lifetime
+                };
+                currentGalaxy.bodies.push(meteor);
+            }
+            
             function mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents) {
                 const vicType = victim.type;
                 const survType = survivor.type;
@@ -876,7 +968,7 @@
             }
 
             /**
-             * ** UPDATED: Renders bodies, particles, and satellites **
+             * Renders bodies, particles, and satellites
              */
             function renderGalaxy() {
                 const viewX = -viewport.x + 300;
@@ -900,7 +992,6 @@
                             labelEl = document.createElement('div');
                             labelEl.className = 'population-label';
                             el.appendChild(labelEl);
-                            // ** Add satellite container **
                             satContainer = document.createElement('div');
                             satContainer.className = 'satellite-container';
                             el.appendChild(satContainer);
@@ -981,9 +1072,7 @@
                         labelEl.textContent = `Pop: ${body.population.toLocaleString()} Int: ${body.intelligence.toFixed(1)}`;
                     }
                     
-                    // ** NEW: Spawn & Animate Satellites **
                     if (satContainer) {
-                        // Spawn satellites if they have been unlocked but not created
                         if (body.hasSatellites && satContainer.childElementCount === 0) {
                             for (let i = 0; i < 3; i++) {
                                 const satEl = document.createElement('div');
@@ -992,7 +1081,6 @@
                             }
                         }
                         
-                        // Animate existing satellites
                         if (satContainer.childElementCount > 0) {
                             const satellites = satContainer.querySelectorAll('.satellite');
                             satellites.forEach((sat, i) => {
@@ -1115,8 +1203,8 @@
                     isHabitable: false,
                     population: 0,
                     lastAngle: 0,
-                    intelligence: 0, // ** NEW **
-                    hasSatellites: false // ** NEW **
+                    intelligence: 0,
+                    hasSatellites: false
                 };
 
                 if (type === 'star') {
@@ -1140,7 +1228,7 @@
                     newBody.size = parseFloat(rawSize) || 15;
                     newBody.color = rawColor || '#2b9d4a';
                     newBody.isHabitable = true;
-                    newBody.population = 1000; // Start with 1000 people
+                    newBody.population = 1000; 
                 }
                 
                 if ((type === 'planet' || type === 'habitable-planet') && currentGalaxy.bodies.length > 0) {
@@ -1185,7 +1273,7 @@
                 clearAll(); 
                 currentGalaxy.bodies = savedData.bodies;
                 viewport = savedData.viewport || { x: 0, y: 0, scale: 1.0 };
-                renderGalaxy(); // Render once to apply new viewport
+                renderGalaxy(); 
                 alert(`Galaxy "${galaxyName}" loaded!`);
             });
             clearGalaxyBtn.addEventListener('click', () => {
@@ -1195,13 +1283,13 @@
             });
             function clearAll() {
                 currentGalaxy.bodies = [];
-                currentGalaxy.particles = []; // Clear particles
+                currentGalaxy.particles = []; 
                 universe.innerHTML = '';
                 bodyElements.clear();
-                particleElements.clear(); // Clear particle map
+                particleElements.clear(); 
                 viewport = { x: 0, y: 0, scale: 1.0 };
                 selectBody(null);
-                renderGalaxy(); // Render once to apply cleared state
+                renderGalaxy(); 
             }
             function populateLoadMenu() {
                 loadGalaxyMenu.innerHTML = '';
