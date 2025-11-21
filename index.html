@@ -93,6 +93,15 @@
             transform-origin: center center;
             transition: background-color 0.1s linear;
         }
+        
+        /* ** NEW: Debris Particle Style ** */
+        .debris-particle {
+            position: absolute;
+            width: 3px;
+            height: 3px;
+            border-radius: 50%;
+            background-color: #aaa;
+        }
 
         .star {
             background-color: #fcdc4c;
@@ -191,7 +200,7 @@
             background-color: #fff;
         }
         
-        /* ** UPDATED: Sim Control Styles ** */
+        /* Sim Control Styles */
         .sim-controls {
             display: flex;
             flex-wrap: wrap; /* Allow wrapping */
@@ -443,8 +452,6 @@
             const pauseBtn = document.getElementById('pause-btn');
             const speedUpBtn = document.getElementById('speed-up-btn');
             const speedDisplay = document.getElementById('speed-display');
-            
-            // ** NEW: Zoom elements **
             const zoomInBtn = document.getElementById('zoom-in-btn');
             const zoomOutBtn = document.getElementById('zoom-out-btn');
             const zoomDisplay = document.getElementById('zoom-display');
@@ -466,13 +473,16 @@
             const G = 1;
             const PLANET_TO_STAR_MASS_THRESHOLD = 750;
             const SLINGSHOT_POWER = 0.1;
-            const ZOOM_STEP = 0.1; // Zoom 10% at a time
+            const ZOOM_STEP = 0.1;
+            const PHYSICS_SUB_STEPS = 5; // ** NEW: For stability **
             
             let currentGalaxy = {
-                bodies: []
+                bodies: [],
+                particles: [] // ** NEW: For crumble animation **
             };
             
             let bodyElements = new Map();
+            let particleElements = new Map(); // ** NEW **
             let selectedBody = null;
             let isDraggingSlingshot = false;
             let lastMousePos = { x: 0, y: 0 };
@@ -504,68 +514,85 @@
                 requestAnimationFrame(simulationLoop);
             }
 
+            /**
+             * ** UPDATED: Physics now uses Sub-Stepping **
+             */
             function updatePhysics() {
                 const blackHoles = currentGalaxy.bodies.filter(b => b.type === 'black-hole');
+                const subTimeStep = timeScale / PHYSICS_SUB_STEPS;
                 
-                // Phase 1: Calculate all forces
-                for (let i = 0; i < currentGalaxy.bodies.length; i++) {
-                    const bodyA = currentGalaxy.bodies[i];
-                    bodyA.fx = 0;
-                    bodyA.fy = 0;
-                    for (let j = 0; j < currentGalaxy.bodies.length; j++) {
-                        if (i === j) continue;
-                        const bodyB = currentGalaxy.bodies[j];
-                        const dx = bodyB.x - bodyA.x;
-                        const dy = bodyB.y - bodyA.y;
-                        const distSq = (dx * dx + dy * dy) || 1;
-                        const dist = Math.sqrt(distSq);
-                        const force = (G * bodyA.mass * bodyB.mass) / distSq;
-                        bodyA.fx += (force * dx) / dist;
-                        bodyA.fy += (force * dy) / dist;
+                // ** Run physics calculations multiple times for stability **
+                for (let s = 0; s < PHYSICS_SUB_STEPS; s++) {
+                    
+                    // Phase 1: Calculate all forces
+                    for (let i = 0; i < currentGalaxy.bodies.length; i++) {
+                        const bodyA = currentGalaxy.bodies[i];
+                        bodyA.fx = 0;
+                        bodyA.fy = 0;
+                        for (let j = 0; j < currentGalaxy.bodies.length; j++) {
+                            if (i === j) continue;
+                            const bodyB = currentGalaxy.bodies[j];
+                            const dx = bodyB.x - bodyA.x;
+                            const dy = bodyB.y - bodyA.y;
+                            const distSq = (dx * dx + dy * dy) || 1;
+                            const dist = Math.sqrt(distSq);
+                            const force = (G * bodyA.mass * bodyB.mass) / distSq;
+                            bodyA.fx += (force * dx) / dist;
+                            bodyA.fy += (force * dy) / dist;
+                        }
                     }
-                }
 
-                // Phase 2: Apply physics (move bodies)
-                for (const body of currentGalaxy.bodies) {
-                    if (body.isStatic || (isDraggingSlingshot && selectedBody && body.id === selectedBody.id)) {
-                        continue;
-                    }
-                    const ax = body.fx / body.mass;
-                    const ay = body.fy / body.mass;
-                    body.vx += ax * timeScale;
-                    body.vy += ay * timeScale;
-                    body.x += body.vx * timeScale;
-                    body.y += body.vy * timeScale;
-                }
-
-                // Phase 2.5: Black Hole Orbital Decay (Spiral)
-                if (blackHoles.length > 0) {
+                    // Phase 2: Apply physics (move bodies)
                     for (const body of currentGalaxy.bodies) {
-                        if (body.isStatic || body.type === 'black-hole') continue;
-
-                        let closestBH = null;
-                        let minDistSq = Infinity;
-                        for (const bh of blackHoles) {
-                            const dx = bh.x - body.x;
-                            const dy = bh.y - body.y;
-                            const distSq = (dx * dx + dy * dy);
-                            if (distSq < minDistSq) {
-                                minDistSq = distSq;
-                                closestBH = bh;
-                            }
+                        if (body.isStatic || (isDraggingSlingshot && selectedBody && body.id === selectedBody.id)) {
+                            continue;
                         }
+                        const ax = body.fx / body.mass;
+                        const ay = body.fy / body.mass;
+                        body.vx += ax * subTimeStep;
+                        body.vy += ay * subTimeStep;
+                        body.x += body.vx * subTimeStep;
+                        body.y += body.vy * subTimeStep;
+                    }
 
-                        if (closestBH) {
-                            const pullRadiusSq = Math.pow(closestBH.mass / 10, 2); 
-                            if (minDistSq < pullRadiusSq) {
-                                const dragFactor = (pullRadiusSq - minDistSq) / pullRadiusSq; 
-                                const decay = 1.0 - (0.005 * dragFactor * timeScale);
-                                body.vx *= decay;
-                                body.vy *= decay;
+                    // Phase 2.5: Black Hole Orbital Decay (Spiral)
+                    if (blackHoles.length > 0) {
+                        for (const body of currentGalaxy.bodies) {
+                            if (body.isStatic || body.type === 'black-hole') continue;
+
+                            let closestBH = null;
+                            let minDistSq = Infinity;
+                            for (const bh of blackHoles) {
+                                const dx = bh.x - body.x;
+                                const dy = bh.y - body.y;
+                                const distSq = (dx * dx + dy * dy);
+                                if (distSq < minDistSq) {
+                                    minDistSq = distSq;
+                                    closestBH = bh;
+                                }
+                            }
+
+                            if (closestBH) {
+                                const pullRadiusSq = Math.pow(closestBH.mass / 10, 2); 
+                                if (minDistSq < pullRadiusSq) {
+                                    const dragFactor = (pullRadiusSq - minDistSq) / pullRadiusSq; 
+                                    const decay = 1.0 - (0.005 * dragFactor * subTimeStep); // Use subTimeStep
+                                    body.vx *= decay;
+                                    body.vy *= decay;
+                                }
                             }
                         }
                     }
-                }
+                    
+                    // ** NEW: Phase 2.7: Particle Physics **
+                    for (const p of currentGalaxy.particles) {
+                        p.x += p.vx * subTimeStep;
+                        p.y += p.vy * subTimeStep;
+                        p.life -= 0.02 * subTimeStep; // Fade over time
+                    }
+                } // ** End of sub-step loop **
+                
+                // --- These things run ONCE per frame, after physics ---
                 
                 // Phase 2.6: Habitable Planet Population Growth
                 if (currentGalaxy.bodies.length > 1) {
@@ -612,7 +639,6 @@
                         if (dist < collisionDist) {
                             let survivor, victim;
                             
-                            // Check for Black Hole first
                             if (bodyA.type === 'black-hole') {
                                 survivor = bodyA; victim = bodyB;
                                 mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
@@ -622,21 +648,26 @@
                                 mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
                             
                             } else {
-                                // --- NO BLACK HOLE INVOLVED ---
                                 const isA_Hab = bodyA.type === 'habitable-planet';
                                 const isB_Hab = bodyB.type === 'habitable-planet';
                                 const isA_Planet = bodyA.type === 'planet';
                                 const isB_Planet = bodyB.type === 'planet';
 
-                                // Non-lethal collisions: (hab + hab) OR (hab + planet)
+                                // Non-lethal: (hab + hab) OR (hab + planet)
                                 if ( (isA_Hab && isB_Hab) || (isA_Hab && isB_Planet) || (isB_Hab && isA_Planet) ) {
-                                    const wipeout = 0.9 + (Math.random() * 0.1); // 90-100%
+                                    const wipeout = 0.9 + (Math.random() * 0.1); 
                                     if (isA_Hab) bodyA.population = Math.floor(bodyA.population * (1.0 - wipeout));
                                     if (isB_Hab) bodyB.population = Math.floor(bodyB.population * (1.0 - wipeout));
+                                    
+                                    // ** NEW: Spawn crumble debris **
+                                    const midX = (bodyA.x + bodyB.x) / 2;
+                                    const midY = (bodyA.y + bodyB.y) / 2;
+                                    spawnDebris(midX, midY, bodyA.color, bodyB.color);
+                                    
                                     continue; // Skip merging
                                 }
                                 
-                                // LETHAL merge: The one with more MASS wins.
+                                // LETHAL merge: Mass wins
                                 if (bodyA.mass >= bodyB.mass) {
                                     survivor = bodyA;
                                     victim = bodyB;
@@ -686,6 +717,39 @@
                         selectBody(null);
                     }
                 }
+                
+                // ** NEW: Phase 5: Clean up dead particles **
+                currentGalaxy.particles = currentGalaxy.particles.filter(p => {
+                    if (p.life <= 0) {
+                        const el = particleElements.get(p.id);
+                        if (el) el.remove();
+                        particleElements.delete(p.id);
+                        return false;
+                    }
+                    return true;
+                });
+            }
+            
+            /**
+             * ** NEW: Debris Spawner **
+             */
+            function spawnDebris(x, y, color1, color2) {
+                const numParticles = 20;
+                for (let i = 0; i < numParticles; i++) {
+                    const angle = Math.random() * 2 * Math.PI;
+                    const speed = Math.random() * 3 + 1; // Random speed
+                    
+                    const particle = {
+                        id: Date.now() + Math.random(),
+                        x: x,
+                        y: y,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed,
+                        life: 1.0, // 1 second lifetime
+                        color: (i % 2 === 0) ? color1 : color2
+                    };
+                    currentGalaxy.particles.push(particle);
+                }
             }
             
             function mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents) {
@@ -731,7 +795,7 @@
             }
 
             /**
-             * Renders with zoom, Spaghettification, & Population
+             * ** UPDATED: Renders bodies, particles, and zoom **
              */
             function renderGalaxy() {
                 const viewX = -viewport.x + 300;
@@ -740,6 +804,7 @@
                 
                 const blackHoles = currentGalaxy.bodies.filter(b => b.type === 'black-hole');
                 
+                // --- 1. Render Bodies ---
                 for (const body of currentGalaxy.bodies) {
                     let el = bodyElements.get(body.id);
                     let indicatorEl;
@@ -839,6 +904,20 @@
                             el.style.border = '2px solid #333';
                         }
                     }
+                }
+                
+                // --- ** NEW: 2. Render Particles ** ---
+                for (const p of currentGalaxy.particles) {
+                    let el = particleElements.get(p.id);
+                    if (!el) {
+                        el = document.createElement('div');
+                        el.className = 'debris-particle';
+                        particleElements.set(p.id, el);
+                        universe.appendChild(el);
+                    }
+                    el.style.backgroundColor = p.color;
+                    el.style.opacity = p.life;
+                    el.style.transform = `translate(${p.x}px, ${p.y}px)`;
                 }
             }
             
@@ -993,8 +1072,10 @@
             });
             function clearAll() {
                 currentGalaxy.bodies = [];
+                currentGalaxy.particles = []; // ** Clear particles **
                 universe.innerHTML = '';
                 bodyElements.clear();
+                particleElements.clear(); // ** Clear particle map **
                 viewport = { x: 0, y: 0, scale: 1.0 };
                 selectBody(null);
                 renderGalaxy(); // Render once to apply cleared state
@@ -1121,7 +1202,7 @@
 
 
             
-            // === 5. MOUSE CONTROLS (with Slingshot) ===
+            // === 5. MOUSE CONTROLS (with Slingshot & Zoom) ===
             
             function getUniverseCoords(e) {
                 const rect = container.getBoundingClientRect();
@@ -1225,8 +1306,6 @@
                 }
             });
             
-            // ** REMOVED: Wheel event listener **
-            
             
             // --- Simulation Control Listeners ---
             
@@ -1263,7 +1342,7 @@
                 speedDisplay.textContent = `Speed: ${timeScale.toFixed(2)}x`;
             }
 
-            // ** NEW: Zoom Button Listeners **
+            // ** UPDATED: Zoom Button Listeners **
             zoomInBtn.addEventListener('click', () => {
                 let newScale = viewport.scale + ZOOM_STEP * viewport.scale;
                 viewport.scale = Math.min(newScale, 20.0); // Clamp max zoom
