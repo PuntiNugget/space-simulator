@@ -94,7 +94,6 @@
             transition: background-color 0.1s linear;
         }
         
-        /* ** NEW: Debris Particle Style ** */
         .debris-particle {
             position: absolute;
             width: 3px;
@@ -111,6 +110,12 @@
             background-color: #000;
             border: 2px solid #333;
             box-shadow: 0 0 20px #ff8c00, 0 0 30px #ff4500;
+        }
+        
+        /* ** NEW: Neutron Star Style ** */
+        .neutron-star {
+            background-color: #aaccff;
+            box-shadow: 0 0 15px #fff, 0 0 25px #aaccff;
         }
 
         .planet {
@@ -334,6 +339,7 @@
                 <select id="body-type">
                     <option value="star">Star</option>
                     <option value="black-hole">Black Hole</option>
+                    <option value="neutron-star">Neutron Star</option>
                     <option value="planet">Planet</option>
                     <option value="habitable-planet">Habitable Planet</option>
                 </select>
@@ -474,15 +480,15 @@
             const PLANET_TO_STAR_MASS_THRESHOLD = 750;
             const SLINGSHOT_POWER = 0.1;
             const ZOOM_STEP = 0.1;
-            const PHYSICS_SUB_STEPS = 5; // ** NEW: For stability **
+            const PHYSICS_SUB_STEPS = 5; // For stability
             
             let currentGalaxy = {
                 bodies: [],
-                particles: [] // ** NEW: For crumble animation **
+                particles: [] // For crumble animation
             };
             
             let bodyElements = new Map();
-            let particleElements = new Map(); // ** NEW **
+            let particleElements = new Map();
             let selectedBody = null;
             let isDraggingSlingshot = false;
             let lastMousePos = { x: 0, y: 0 };
@@ -497,7 +503,8 @@
                 'spaghetti': 'Yummy spaghetti!!',
                 'number_one': "I'm number 1",
                 'time_warp': 'Time warp',
-                'za_warldo': 'ZA WORLDO!'
+                'za_warldo': 'ZA WORLDO!',
+                'kilonova': 'Kilonova!' // ** NEW **
             };
             let unlockedAchievements = new Set();
 
@@ -514,9 +521,6 @@
                 requestAnimationFrame(simulationLoop);
             }
 
-            /**
-             * ** UPDATED: Physics now uses Sub-Stepping **
-             */
             function updatePhysics() {
                 const blackHoles = currentGalaxy.bodies.filter(b => b.type === 'black-hole');
                 const subTimeStep = timeScale / PHYSICS_SUB_STEPS;
@@ -584,7 +588,7 @@
                         }
                     }
                     
-                    // ** NEW: Phase 2.7: Particle Physics **
+                    // Phase 2.7: Particle Physics
                     for (const p of currentGalaxy.particles) {
                         p.x += p.vx * subTimeStep;
                         p.y += p.vy * subTimeStep;
@@ -621,6 +625,7 @@
 
                 // Phase 3: Collision Detection & Resolution
                 const bodiesToDestroy = new Set();
+                const bodiesToAdd = []; // ** NEW: For kilonova **
                 let supernovaEvents = [];
 
                 for (let i = 0; i < currentGalaxy.bodies.length; i++) {
@@ -638,8 +643,16 @@
 
                         if (dist < collisionDist) {
                             let survivor, victim;
+                            const isA_NS = bodyA.type === 'neutron-star';
+                            const isB_NS = bodyB.type === 'neutron-star';
                             
-                            if (bodyA.type === 'black-hole') {
+                            // --- Check for special collision types FIRST ---
+                            if (isA_NS && isB_NS) {
+                                // ** Kilonova Event! **
+                                handleKilonova(bodyA, bodyB, bodiesToDestroy, bodiesToAdd);
+                                continue; // Skip all other logic for this pair
+                            
+                            } else if (bodyA.type === 'black-hole') {
                                 survivor = bodyA; victim = bodyB;
                                 mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
                             
@@ -647,7 +660,16 @@
                                 survivor = bodyB; victim = bodyA;
                                 mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
                             
+                            } else if (isA_NS) {
+                                survivor = bodyA; victim = bodyB;
+                                mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
+                            
+                            } else if (isB_NS) {
+                                survivor = bodyB; victim = bodyA;
+                                mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
+                            
                             } else {
+                                // --- NO Black Hole or Neutron Star involved ---
                                 const isA_Hab = bodyA.type === 'habitable-planet';
                                 const isB_Hab = bodyB.type === 'habitable-planet';
                                 const isA_Planet = bodyA.type === 'planet';
@@ -658,12 +680,7 @@
                                     const wipeout = 0.9 + (Math.random() * 0.1); 
                                     if (isA_Hab) bodyA.population = Math.floor(bodyA.population * (1.0 - wipeout));
                                     if (isB_Hab) bodyB.population = Math.floor(bodyB.population * (1.0 - wipeout));
-                                    
-                                    // ** NEW: Spawn crumble debris **
-                                    const midX = (bodyA.x + bodyB.x) / 2;
-                                    const midY = (bodyA.y + bodyB.y) / 2;
-                                    spawnDebris(midX, midY, bodyA.color, bodyB.color);
-                                    
+                                    spawnDebris(bodyA.x, bodyA.y, bodyA.color, bodyB.color);
                                     continue; // Skip merging
                                 }
                                 
@@ -718,7 +735,12 @@
                     }
                 }
                 
-                // ** NEW: Phase 5: Clean up dead particles **
+                // ** NEW: Add newly created bodies (from kilonova) **
+                if (bodiesToAdd.length > 0) {
+                    currentGalaxy.bodies.push(...bodiesToAdd);
+                }
+                
+                // Phase 5: Clean up dead particles
                 currentGalaxy.particles = currentGalaxy.particles.filter(p => {
                     if (p.life <= 0) {
                         const el = particleElements.get(p.id);
@@ -731,8 +753,32 @@
             }
             
             /**
-             * ** NEW: Debris Spawner **
+             * ** NEW: Kilonova Handler **
              */
+            function handleKilonova(bodyA, bodyB, bodiesToDestroy, bodiesToAdd) {
+                bodiesToDestroy.add(bodyA.id);
+                bodiesToDestroy.add(bodyB.id);
+
+                const newMass = bodyA.mass + bodyB.mass;
+                const newBH = {
+                    id: Date.now(),
+                    type: 'black-hole',
+                    mass: newMass,
+                    size: 30, // Default BH size
+                    x: (bodyA.x + bodyB.x) / 2,
+                    y: (bodyA.y + bodyB.y) / 2,
+                    vx: ((bodyA.mass * bodyA.vx) + (bodyB.mass * bodyB.vx)) / newMass,
+                    vy: ((bodyA.mass * bodyA.vy) + (bodyB.mass * bodyB.vy)) / newMass,
+                    fx: 0, fy: 0,
+                    isStatic: false,
+                    isHabitable: false,
+                    population: 0,
+                    lastAngle: 0
+                };
+                bodiesToAdd.push(newBH);
+                unlockAchievement('kilonova', 'Kilonova!');
+            }
+            
             function spawnDebris(x, y, color1, color2) {
                 const numParticles = 20;
                 for (let i = 0; i < numParticles; i++) {
@@ -756,11 +802,12 @@
                 const vicType = victim.type;
                 const survType = survivor.type;
 
-                if (survType === 'black-hole' && (vicType === 'planet' || vicType === 'habitable-planet' || vicType === 'star')) {
+                // ** UPDATED: Achievement Triggers **
+                if (survType === 'black-hole' && vicType !== 'black-hole') {
                     unlockAchievement('spaghetti', 'Yummy spaghetti!!');
-                } else if (survType === 'star' && (vicType === 'planet' || vicType === 'habitable-planet')) {
+                } else if ((survType === 'star' || survType === 'neutron-star') && (vicType === 'planet' || vicType === 'habitable-planet')) {
                     unlockAchievement('nom_nom', 'NOM NOM');
-                } else if ((survType === 'planet' || survType === 'habitable-planet') && vicType === 'star') {
+                } else if ((survType === 'planet' || survType === 'habitable-planet') && (vicType === 'star' || vicType === 'neutron-star')) {
                     unlockAchievement('number_one', "I'm number 1");
                 }
 
@@ -795,7 +842,7 @@
             }
 
             /**
-             * ** UPDATED: Renders bodies, particles, and zoom **
+             * Renders bodies, particles, and zoom
              */
             function renderGalaxy() {
                 const viewX = -viewport.x + 300;
@@ -837,7 +884,7 @@
                     
                     let isSpaghettified = false;
                     
-                    if (body.type !== 'black-hole' && blackHoles.length > 0) {
+                    if (body.type !== 'black-hole' && body.type !== 'neutron-star' && blackHoles.length > 0) {
                         let closestBH = null;
                         let minDistSq = Infinity;
                         for (const bh of blackHoles) {
@@ -906,7 +953,7 @@
                     }
                 }
                 
-                // --- ** NEW: 2. Render Particles ** ---
+                // --- 2. Render Particles ---
                 for (const p of currentGalaxy.particles) {
                     let el = particleElements.get(p.id);
                     if (!el) {
@@ -942,7 +989,7 @@
             toolPanBtn.onclick = () => setActiveTool('pan');
             toolPickerBtn.onclick = () => setActiveTool('picker');
 
-            // --- Smart Form Function ---
+            // --- ** UPDATED: Smart Form Function ** ---
             function updateAddForm() {
                 const type = bodyTypeSelect.value;
                 if (type === 'star') {
@@ -959,6 +1006,13 @@
                     bodyMassInput.placeholder = "Mass (default: 20000)";
                     bodySizeInput.placeholder = "Size (default: 30)";
                     bodyColorInput.value = '#000000';
+                } else if (type === 'neutron-star') {
+                    colorField.style.display = 'none';
+                    orbitField.style.display = 'none';
+                    staticField.style.display = 'block'; 
+                    bodyMassInput.placeholder = "Mass (default: 10000)";
+                    bodySizeInput.placeholder = "Size (default: 8)";
+                    bodyColorInput.value = '#aaccff';
                 } else if (type === 'planet') {
                     colorField.style.display = 'block';
                     orbitField.style.display = 'block';
@@ -982,7 +1036,7 @@
             bodyTypeSelect.addEventListener('change', updateAddForm);
             
             
-            // --- Add Body Listener (with defaults) ---
+            // --- ** UPDATED: Add Body Listener (with defaults) ** ---
             addBodyBtn.addEventListener('click', () => {
                 const type = bodyTypeSelect.value;
                 const rawMass = bodyMassInput.value;
@@ -1008,6 +1062,10 @@
                     newBody.mass = parseFloat(rawMass) || 20000;
                     newBody.size = parseFloat(rawSize) || 30;
                     newBody.color = '#000000';
+                } else if (type === 'neutron-star') {
+                    newBody.mass = parseFloat(rawMass) || 10000;
+                    newBody.size = parseFloat(rawSize) || 8;
+                    newBody.color = rawColor || '#aaccff';
                 } else if (type === 'planet') {
                     newBody.mass = parseFloat(rawMass) || 10;
                     newBody.size = parseFloat(rawSize) || 12;
@@ -1072,10 +1130,10 @@
             });
             function clearAll() {
                 currentGalaxy.bodies = [];
-                currentGalaxy.particles = []; // ** Clear particles **
+                currentGalaxy.particles = []; // Clear particles
                 universe.innerHTML = '';
                 bodyElements.clear();
-                particleElements.clear(); // ** Clear particle map **
+                particleElements.clear(); // Clear particle map
                 viewport = { x: 0, y: 0, scale: 1.0 };
                 selectBody(null);
                 renderGalaxy(); // Render once to apply cleared state
@@ -1342,7 +1400,7 @@
                 speedDisplay.textContent = `Speed: ${timeScale.toFixed(2)}x`;
             }
 
-            // ** UPDATED: Zoom Button Listeners **
+            // Zoom Button Listeners
             zoomInBtn.addEventListener('click', () => {
                 let newScale = viewport.scale + ZOOM_STEP * viewport.scale;
                 viewport.scale = Math.min(newScale, 20.0); // Clamp max zoom
