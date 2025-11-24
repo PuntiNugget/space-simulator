@@ -133,6 +133,13 @@
             box-shadow: 0 0 10px #5eff8b;
         }
         
+        /* ** NEW: Colony Ship Style ** */
+        .colony-ship {
+            background-color: #fff;
+            border: 1px solid #00f;
+            border-radius: 0; /* Make it a square */
+        }
+        
         /* Gravity Indicator Style */
         .gravity-indicator {
             position: absolute;
@@ -506,13 +513,21 @@
             let viewport = { x: 0, y: 0, scale: 1.0 };
             const G = 1;
             const PLANET_TO_STAR_MASS_THRESHOLD = 750;
-            const SLINGSHOT_POWER = 0.02; // ** REDUCED POWER for visible gravity **
+            const SLINGSHOT_POWER = 0.02; // ** Reduced power for realistic gravity **
             const ZOOM_STEP = 0.1;
             const PHYSICS_SUB_STEPS = 5;
             
-            // ** NEW: Continuous Exponential Growth Rates **
+            // ** UPDATED: Growth Rates **
             const POP_GROWTH_RATE_PER_SEC = 0.01; // 1% per second
-            const INT_GROWTH_RATE_PER_SEC = 0.005; // 0.5% per second
+            const INT_GROWTH_RATE_PER_SEC = 0.1; // 10% per second
+            const INT_POP_REQUIREMENT = 2000; // ** Lowered requirement **
+            const SATELLITE_INT_THRESHOLD = 50;
+            
+            // ** NEW: Colonization State **
+            const COLONIZATION_INT_THRESHOLD = 100;
+            const COLONIZATION_COOLDOWN = 30000; // 30 seconds
+            const COLONY_SHIP_SPEED = 3;
+            const COLONY_SHIP_LIFESPAN = 60; // 60 seconds
             
             let currentGalaxy = {
                 bodies: [],
@@ -541,7 +556,8 @@
                 'time_warp': 'Time warp',
                 'za_warldo': 'ZA WORLDO!',
                 'kilonova': 'Kilonova!',
-                'civilization': "It's Alive!"
+                'civilization': "It's Alive!",
+                'colonization': "One Small Step" // ** NEW **
             };
             let unlockedAchievements = new Set();
 
@@ -587,6 +603,7 @@
                 const subTimeStep = timeScale / PHYSICS_SUB_STEPS;
                 let bodiesToAdd = []; 
                 let bodiesToDestroy = new Set();
+                const now = Date.now();
                 
                 for (let s = 0; s < PHYSICS_SUB_STEPS; s++) {
                     
@@ -613,29 +630,42 @@
                         if (body.isStatic || (isDraggingSlingshot && selectedBody && body.id === selectedBody.id)) {
                             continue;
                         }
-                        const ax = body.fx / body.mass;
-                        const ay = body.fy / body.mass;
-                        body.vx += ax * subTimeStep;
-                        body.vy += ay * subTimeStep;
+                        
+                        // ** NEW: Colony Ship AI **
+                        if (body.type === 'colony-ship') {
+                            const target = currentGalaxy.bodies.find(b => b.id === body.targetId);
+                            if (target) {
+                                // Steer towards target
+                                const angle = Math.atan2(target.y - body.y, target.x - body.x);
+                                body.vx = Math.cos(angle) * COLONY_SHIP_SPEED;
+                                body.vy = Math.sin(angle) * COLONY_SHIP_SPEED;
+                            } else {
+                                body.life = 0; // Target destroyed, despawn
+                            }
+                        } else {
+                            // Regular gravity physics
+                            const ax = body.fx / body.mass;
+                            const ay = body.fy / body.mass;
+                            body.vx += ax * subTimeStep;
+                            body.vy += ay * subTimeStep;
+                        }
+                        
                         body.x += body.vx * subTimeStep;
                         body.y += body.vy * subTimeStep;
                         
-                        if (body.type === 'meteor') {
+                        if (body.type === 'meteor' || body.type === 'colony-ship') {
                             body.life -= subTimeStep;
                             if (body.life <= 0) {
                                 bodiesToDestroy.add(body.id);
                             }
                         }
                         
-                        // ** UPDATED: Continuous Exponential Growth **
                         if (body.isHabitable && body.population > 0) {
-                            // Exponential population growth
                             const popGrowth = body.population * (POP_GROWTH_RATE_PER_SEC * subTimeStep);
                             body.population += popGrowth;
                             
-                            // Exponential intelligence growth (if conditions are met)
-                            if (body.population > 5000) {
-                                if (body.intelligence < 1) body.intelligence = 1; // Kick-start
+                            if (body.population > INT_POP_REQUIREMENT) { 
+                                if (body.intelligence < 1) body.intelligence = 1; 
                                 const intelGrowth = body.intelligence * (INT_GROWTH_RATE_PER_SEC * subTimeStep);
                                 body.intelligence += intelGrowth;
                             }
@@ -679,7 +709,45 @@
                     }
                 } // ** End of sub-step loop **
                 
+                // --- These things run ONCE per frame, after physics ---
                 
+                // Phase 2.6: Habitable Planet *Intelligence* Growth (per orbit)
+                if (currentGalaxy.bodies.length > 1) {
+                    let centralBody = currentGalaxy.bodies[0];
+                    for(let i=1; i<currentGalaxy.bodies.length; i++) {
+                        if(currentGalaxy.bodies[i].mass > centralBody.mass) {
+                            centralBody = currentGalaxy.bodies[i];
+                        }
+                    }
+                    
+                    for (const body of currentGalaxy.bodies) {
+                        if (body.isHabitable && body.id !== centralBody.id) {
+                            const dx = body.x - centralBody.x;
+                            const dy = body.y - centralBody.y;
+                            const currentAngle = Math.atan2(dy, dx);
+                            
+                            if (body.lastAngle > 0 && currentAngle <= 0) {
+                                // Check for Satellite launch
+                                if (body.intelligence >= SATELLITE_INT_THRESHOLD && !body.hasSatellites) {
+                                    body.hasSatellites = true;
+                                    unlockAchievement('civilization', "It's Alive!");
+                                }
+                            }
+                            body.lastAngle = currentAngle;
+                            
+                            // ** NEW: Colonization Logic **
+                            if (body.intelligence >= COLONIZATION_INT_THRESHOLD && now - body.lastColonizationAttempt > COLONIZATION_COOLDOWN) {
+                                body.lastColonizationAttempt = now;
+                                const target = findColonizationTarget(body);
+                                if (target) {
+                                    spawnColonyShip(body, target, bodiesToAdd);
+                                }
+                            }
+                        }
+                    }
+                }
+
+
                 // Phase 3: Collision Detection & Resolution
                 let supernovaEvents = [];
 
@@ -702,6 +770,10 @@
                             const isB_NS = bodyB.type === 'neutron-star';
                             const isA_Meteor = bodyA.type === 'meteor';
                             const isB_Meteor = bodyB.type === 'meteor';
+                            const isA_Ship = bodyA.type === 'colony-ship';
+                            const isB_Ship = bodyB.type === 'colony-ship';
+                            
+                            // ** NEW: Collision Hierarchy **
                             
                             // 1. Meteor Collisions (always die)
                             if (isA_Meteor || isB_Meteor) {
@@ -715,12 +787,30 @@
                                 continue;
                             }
                             
-                            // 2. Kilonova
+                            // 2. Colony Ship Collisions
+                            if (isA_Ship || isB_Ship) {
+                                const ship = isA_Ship ? bodyA : bodyB;
+                                const target = isA_Ship ? bodyB : bodyA;
+                                
+                                if (target.id === ship.targetId && target.type === 'planet') {
+                                    // ** Successful Colonization! **
+                                    target.type = 'habitable-planet';
+                                    target.isHabitable = true;
+                                    target.population = 1000;
+                                    target.intelligence = 0;
+                                    target.populationHistory = [];
+                                    target.color = '#2b9d4a';
+                                }
+                                bodiesToDestroy.add(ship.id); // Ship is always destroyed
+                                continue;
+                            }
+                            
+                            // 3. Kilonova
                             if (isA_NS && isB_NS) {
                                 handleKilonova(bodyA, bodyB, bodiesToDestroy, bodiesToAdd);
                                 continue; 
                             
-                            // 3. Black Hole wins all
+                            // 4. Black Hole wins all
                             } else if (bodyA.type === 'black-hole') {
                                 survivor = bodyA; victim = bodyB;
                                 mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
@@ -729,7 +819,7 @@
                                 survivor = bodyB; victim = bodyA;
                                 mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
                             
-                            // 4. Neutron Star wins non-BH
+                            // 5. Neutron Star wins non-BH
                             } else if (isA_NS) {
                                 survivor = bodyA; victim = bodyB;
                                 mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents);
@@ -914,6 +1004,49 @@
                 currentGalaxy.bodies.push(meteor);
             }
             
+            // ** NEW: Colonization Functions **
+            function findColonizationTarget(originBody) {
+                let closestTarget = null;
+                let min_dist_sq = Infinity;
+                
+                for (const body of currentGalaxy.bodies) {
+                    if (body.type === 'planet') { // Can only colonize regular planets
+                        const dx = body.x - originBody.x;
+                        const dy = body.y - originBody.y;
+                        const distSq = dx*dx + dy*dy;
+                        if (distSq < min_dist_sq) {
+                            min_dist_sq = distSq;
+                            closestTarget = body;
+                        }
+                    }
+                }
+                return closestTarget;
+            }
+            
+            function spawnColonyShip(origin, target, bodiesToAdd) {
+                unlockAchievement('colonization', 'One Small Step');
+                
+                const ship = {
+                    id: Date.now() + Math.random(),
+                    type: 'colony-ship',
+                    mass: 0.1, // Almost massless
+                    size: 5,
+                    color: '#fff',
+                    x: origin.x,
+                    y: origin.y,
+                    vx: 0, // Will be set by AI
+                    vy: 0,
+                    fx: 0, fy: 0,
+                    isStatic: false,
+                    isHabitable: false,
+                    life: COLONY_SHIP_LIFESPAN,
+                    targetId: target.id, // Store the target's ID
+                    populationHistory: []
+                };
+                bodiesToAdd.push(ship);
+            }
+            
+            
             function mergeBodies(survivor, victim, bodiesToDestroy, supernovaEvents) {
                 const vicType = victim.type;
                 const survType = survivor.type;
@@ -1003,6 +1136,7 @@
                     
                     let isSpaghettified = false;
                     
+                    // ** Spaghettification only for black holes **
                     if (body.type !== 'black-hole' && body.type !== 'neutron-star' && blackHoles.length > 0) {
                         let closestBH = null;
                         let minDistSq = Infinity;
@@ -1062,10 +1196,8 @@
                         labelEl.textContent = `Pop: ${body.population.toLocaleString(undefined, { maximumFractionDigits: 0 })} Int: ${body.intelligence.toFixed(1)}`;
                     }
                     
-                    // ** UPDATED: Satellite logic moved here **
                     if (satContainer) {
-                        // Check for satellite launch (runs once per frame)
-                        if (body.isHabitable && body.intelligence >= 50 && !body.hasSatellites) {
+                        if (body.isHabitable && body.intelligence >= SATELLITE_INT_THRESHOLD && !body.hasSatellites) {
                             body.hasSatellites = true;
                             unlockAchievement('civilization', "It's Alive!");
                         }
@@ -1202,7 +1334,7 @@
                     lastAngle: 0,
                     intelligence: 0,
                     hasSatellites: false,
-                    populationHistory: [] // ** Add history for graph **
+                    populationHistory: [] 
                 };
 
                 if (type === 'star') {
@@ -1366,7 +1498,7 @@
                     options: {
                         scales: {
                             y: {
-                                beginAtZero: false, // Start at lowest data point
+                                beginAtZero: false, 
                                 ticks: { color: '#fff' }
                             },
                             x: {
