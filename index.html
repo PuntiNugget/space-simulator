@@ -133,7 +133,6 @@
             box-shadow: 0 0 10px #5eff8b;
         }
         
-        /* ** NEW: Colony Ship Style ** */
         .colony-ship {
             background-color: #fff;
             border: 1px solid #00f;
@@ -513,17 +512,20 @@
             let viewport = { x: 0, y: 0, scale: 1.0 };
             const G = 1;
             const PLANET_TO_STAR_MASS_THRESHOLD = 750;
-            const SLINGSHOT_POWER = 0.02; // ** Reduced power for realistic gravity **
+            const SLINGSHOT_POWER = 0.02; // Reduced power
             const ZOOM_STEP = 0.1;
             const PHYSICS_SUB_STEPS = 5;
             
-            // ** UPDATED: Growth Rates **
-            const POP_GROWTH_RATE_PER_SEC = 0.01; // 1% per second
-            const INT_GROWTH_RATE_PER_SEC = 0.1; // 10% per second
-            const INT_POP_REQUIREMENT = 2000; // ** Lowered requirement **
+            // Growth Rates
+            const POP_GROWTH_RATE_INITIAL_PER_SEC = 0.001; // 0.1% per second (stagnant)
+            const POP_GROWTH_RATE_RAPID_PER_SEC = 0.01;   // 1% per second (rapid)
+            const POP_RAPID_GROWTH_THRESHOLD = 10000;      // Pop needed for rapid growth
+            const INT_GROWTH_RATE_PER_SEC = 0.01;         // 1% per second (slower)
+            const INT_POP_REQUIREMENT = 5000;           // Pop needed for intelligence
+            
             const SATELLITE_INT_THRESHOLD = 50;
             
-            // ** NEW: Colonization State **
+            // Colonization State
             const COLONIZATION_INT_THRESHOLD = 100;
             const COLONIZATION_COOLDOWN = 30000; // 30 seconds
             const COLONY_SHIP_SPEED = 3;
@@ -557,7 +559,7 @@
                 'za_warldo': 'ZA WORLDO!',
                 'kilonova': 'Kilonova!',
                 'civilization': "It's Alive!",
-                'colonization': "One Small Step" // ** NEW **
+                'colonization': "One Small Step"
             };
             let unlockedAchievements = new Set();
 
@@ -631,7 +633,6 @@
                             continue;
                         }
                         
-                        // ** NEW: Colony Ship AI **
                         if (body.type === 'colony-ship') {
                             const target = currentGalaxy.bodies.find(b => b.id === body.targetId);
                             if (target) {
@@ -660,10 +661,18 @@
                             }
                         }
                         
+                        // ** UPDATED: Continuous Exponential Growth **
                         if (body.isHabitable && body.population > 0) {
-                            const popGrowth = body.population * (POP_GROWTH_RATE_PER_SEC * subTimeStep);
+                            let popGrowthRate;
+                            if (body.population < POP_RAPID_GROWTH_THRESHOLD) {
+                                popGrowthRate = POP_GROWTH_RATE_INITIAL_PER_SEC; // Stagnant
+                            } else {
+                                popGrowthRate = POP_GROWTH_RATE_RAPID_PER_SEC; // Rapid
+                            }
+                            const popGrowth = body.population * (popGrowthRate * subTimeStep);
                             body.population += popGrowth;
                             
+                            // Exponential intelligence growth (if conditions are met)
                             if (body.population > INT_POP_REQUIREMENT) { 
                                 if (body.intelligence < 1) body.intelligence = 1; 
                                 const intelGrowth = body.intelligence * (INT_GROWTH_RATE_PER_SEC * subTimeStep);
@@ -735,7 +744,7 @@
                             }
                             body.lastAngle = currentAngle;
                             
-                            // ** NEW: Colonization Logic **
+                            // Colonization Logic
                             if (body.intelligence >= COLONIZATION_INT_THRESHOLD && now - body.lastColonizationAttempt > COLONIZATION_COOLDOWN) {
                                 body.lastColonizationAttempt = now;
                                 const target = findColonizationTarget(body);
@@ -773,8 +782,6 @@
                             const isA_Ship = bodyA.type === 'colony-ship';
                             const isB_Ship = bodyB.type === 'colony-ship';
                             
-                            // ** NEW: Collision Hierarchy **
-                            
                             // 1. Meteor Collisions (always die)
                             if (isA_Meteor || isB_Meteor) {
                                 const meteor = isA_Meteor ? bodyA : bodyB;
@@ -793,7 +800,7 @@
                                 const target = isA_Ship ? bodyB : bodyA;
                                 
                                 if (target.id === ship.targetId && target.type === 'planet') {
-                                    // ** Successful Colonization! **
+                                    // Successful Colonization!
                                     target.type = 'habitable-planet';
                                     target.isHabitable = true;
                                     target.population = 1000;
@@ -998,29 +1005,10 @@
                     x: x, y: y, vx: vx, vy: vy, fx: 0, fy: 0,
                     isStatic: false,
                     isHabitable: false,
-                    life: 30, // 30 seconds lifetime
+                    life: 30, 
                     populationHistory: []
                 };
                 currentGalaxy.bodies.push(meteor);
-            }
-            
-            // ** NEW: Colonization Functions **
-            function findColonizationTarget(originBody) {
-                let closestTarget = null;
-                let min_dist_sq = Infinity;
-                
-                for (const body of currentGalaxy.bodies) {
-                    if (body.type === 'planet') { // Can only colonize regular planets
-                        const dx = body.x - originBody.x;
-                        const dy = body.y - originBody.y;
-                        const distSq = dx*dx + dy*dy;
-                        if (distSq < min_dist_sq) {
-                            min_dist_sq = distSq;
-                            closestTarget = body;
-                        }
-                    }
-                }
-                return closestTarget;
             }
             
             function spawnColonyShip(origin, target, bodiesToAdd) {
@@ -1029,18 +1017,18 @@
                 const ship = {
                     id: Date.now() + Math.random(),
                     type: 'colony-ship',
-                    mass: 0.1, // Almost massless
+                    mass: 0.1, 
                     size: 5,
                     color: '#fff',
                     x: origin.x,
                     y: origin.y,
-                    vx: 0, // Will be set by AI
+                    vx: 0, 
                     vy: 0,
                     fx: 0, fy: 0,
                     isStatic: false,
                     isHabitable: false,
                     life: COLONY_SHIP_LIFESPAN,
-                    targetId: target.id, // Store the target's ID
+                    targetId: target.id, 
                     populationHistory: []
                 };
                 bodiesToAdd.push(ship);
@@ -1136,7 +1124,6 @@
                     
                     let isSpaghettified = false;
                     
-                    // ** Spaghettification only for black holes **
                     if (body.type !== 'black-hole' && body.type !== 'neutron-star' && blackHoles.length > 0) {
                         let closestBH = null;
                         let minDistSq = Infinity;
@@ -1316,7 +1303,7 @@
             bodyTypeSelect.addEventListener('change', updateAddForm);
             
             
-            // --- Add Body Listener (with defaults) ---
+            // --- ** UPDATED: Add Body Listener (with orbital logic) ** ---
             addBodyBtn.addEventListener('click', () => {
                 const type = bodyTypeSelect.value;
                 const rawMass = bodyMassInput.value;
@@ -1334,7 +1321,8 @@
                     lastAngle: 0,
                     intelligence: 0,
                     hasSatellites: false,
-                    populationHistory: [] 
+                    populationHistory: [],
+                    lastColonizationAttempt: 0
                 };
 
                 if (type === 'star') {
@@ -1361,7 +1349,8 @@
                     newBody.population = 1000; 
                 }
                 
-                if ((type === 'planet' || type === 'habitable-planet') && currentGalaxy.bodies.length > 0) {
+                // ** NEW: Orbital logic for all non-static bodies **
+                if (!newBody.isStatic && currentGalaxy.bodies.length > 0) {
                     let centralBody = currentGalaxy.bodies[0];
                     for(let i=1; i<currentGalaxy.bodies.length; i++) {
                         if(currentGalaxy.bodies[i].mass > centralBody.mass) {
@@ -1369,7 +1358,14 @@
                         }
                     }
                     
-                    const orbitDist = parseFloat(rawOrbitDist) || (type === 'habitable-planet' ? 200 : 150);
+                    let orbitDist = parseFloat(rawOrbitDist);
+                    // Set default orbit distances if not specified
+                    if (!orbitDist) {
+                        if (type === 'habitable-planet') orbitDist = 200;
+                        else if (type === 'planet') orbitDist = 150;
+                        else orbitDist = 250; // Default for stars, NS, BH
+                    }
+                    
                     newBody.x = centralBody.x + orbitDist;
                     newBody.y = centralBody.y;
                     
@@ -1406,6 +1402,7 @@
                     body.populationHistory = body.populationHistory || [];
                     body.intelligence = body.intelligence || 0;
                     body.hasSatellites = body.hasSatellites || false;
+                    body.lastColonizationAttempt = body.lastColonizationAttempt || 0;
                 });
                 viewport = savedData.viewport || { x: 0, y: 0, scale: 1.0 };
                 renderGalaxy(); 
