@@ -512,11 +512,11 @@
             let viewport = { x: 0, y: 0, scale: 1.0 };
             const G = 1;
             const PLANET_TO_STAR_MASS_THRESHOLD = 750;
-            const SLINGSHOT_POWER = 0.02; 
+            const SLINGSHOT_POWER = 0.02; // Reduced power
             const ZOOM_STEP = 0.1;
             const PHYSICS_SUB_STEPS = 5;
             
-            // Growth Rates
+            // ** UPDATED: Growth Rates **
             const POP_GROWTH_RATE_INITIAL_PER_SEC = 0.001; // 0.1% per second (stagnant)
             const POP_GROWTH_RATE_RAPID_PER_SEC = 0.01;   // 1% per second (rapid)
             const POP_RAPID_GROWTH_THRESHOLD = 10000;      // Pop needed for rapid growth
@@ -943,7 +943,7 @@
                     intelligence: 0,
                     hasSatellites: false,
                     populationHistory: [],
-                    lastColonizationAttempt: 0 // ** BUG FIX **
+                    lastColonizationAttempt: 0
                 };
                 bodiesToAdd.push(newBH);
                 unlockAchievement('kilonova', 'Kilonova!');
@@ -1010,7 +1010,7 @@
                     isHabitable: false,
                     life: 30, 
                     populationHistory: [],
-                    lastColonizationAttempt: 0 // ** BUG FIX **
+                    lastColonizationAttempt: 0
                 };
                 currentGalaxy.bodies.push(meteor);
             }
@@ -1034,7 +1034,7 @@
                     life: COLONY_SHIP_LIFESPAN,
                     targetId: target.id, 
                     populationHistory: [],
-                    lastColonizationAttempt: 0 // ** BUG FIX **
+                    lastColonizationAttempt: 0
                 };
                 bodiesToAdd.push(ship);
             }
@@ -1308,7 +1308,7 @@
             bodyTypeSelect.addEventListener('change', updateAddForm);
             
             
-            // --- ** UPDATED: Add Body Listener (with orbital logic) ** ---
+            // --- Add Body Listener (with defaults) ---
             addBodyBtn.addEventListener('click', () => {
                 const type = bodyTypeSelect.value;
                 const rawMass = bodyMassInput.value;
@@ -1327,7 +1327,7 @@
                     intelligence: 0,
                     hasSatellites: false,
                     populationHistory: [],
-                    lastColonizationAttempt: 0 // ** BUG FIX **
+                    lastColonizationAttempt: 0 
                 };
 
                 if (type === 'star') {
@@ -1354,7 +1354,7 @@
                     newBody.population = 1000; 
                 }
                 
-                // ** NEW: Orbital logic for all non-static bodies **
+                // ** UPDATED: Orbital logic for all non-static bodies **
                 if (!newBody.isStatic && currentGalaxy.bodies.length > 0) {
                     let centralBody = currentGalaxy.bodies[0];
                     for(let i=1; i<currentGalaxy.bodies.length; i++) {
@@ -1364,7 +1364,6 @@
                     }
                     
                     let orbitDist = parseFloat(rawOrbitDist);
-                    // Set default orbit distances if not specified
                     if (!orbitDist) {
                         if (type === 'habitable-planet') orbitDist = 200;
                         else if (type === 'planet') orbitDist = 150;
@@ -1397,6 +1396,8 @@
                 alert(`Galaxy "${galaxyName}" saved!`);
                 populateLoadMenu();
             });
+            
+            // ** UPDATED: Load function now adds all new properties **
             loadGalaxyBtn.addEventListener('click', () => {
                 const galaxyName = loadGalaxyMenu.value;
                 if (!galaxyName) return alert('Please select a galaxy.');
