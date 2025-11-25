@@ -503,7 +503,7 @@
             
             // Graph elements
             const graphContainer = document.getElementById('population-graph-container');
-            let populationChart = null; // Will hold the Chart.js object
+            let populationChart = null; 
 
 
             // === 2. CORE SIMULATION STATE ===
@@ -512,7 +512,7 @@
             let viewport = { x: 0, y: 0, scale: 1.0 };
             const G = 1;
             const PLANET_TO_STAR_MASS_THRESHOLD = 750;
-            const SLINGSHOT_POWER = 0.02; // Reduced power
+            const SLINGSHOT_POWER = 0.02; 
             const ZOOM_STEP = 0.1;
             const PHYSICS_SUB_STEPS = 5;
             
@@ -800,13 +800,15 @@
                                 const target = isA_Ship ? bodyB : bodyA;
                                 
                                 if (target.id === ship.targetId && target.type === 'planet') {
-                                    // Successful Colonization!
+                                    // ** Successful Colonization! (BUG FIX) **
                                     target.type = 'habitable-planet';
                                     target.isHabitable = true;
                                     target.population = 1000;
                                     target.intelligence = 0;
                                     target.populationHistory = [];
                                     target.color = '#2b9d4a';
+                                    target.hasSatellites = false;
+                                    target.lastColonizationAttempt = 0;
                                 }
                                 bodiesToDestroy.add(ship.id); // Ship is always destroyed
                                 continue;
@@ -940,7 +942,8 @@
                     lastAngle: 0,
                     intelligence: 0,
                     hasSatellites: false,
-                    populationHistory: []
+                    populationHistory: [],
+                    lastColonizationAttempt: 0 // ** BUG FIX **
                 };
                 bodiesToAdd.push(newBH);
                 unlockAchievement('kilonova', 'Kilonova!');
@@ -1006,7 +1009,8 @@
                     isStatic: false,
                     isHabitable: false,
                     life: 30, 
-                    populationHistory: []
+                    populationHistory: [],
+                    lastColonizationAttempt: 0 // ** BUG FIX **
                 };
                 currentGalaxy.bodies.push(meteor);
             }
@@ -1029,7 +1033,8 @@
                     isHabitable: false,
                     life: COLONY_SHIP_LIFESPAN,
                     targetId: target.id, 
-                    populationHistory: []
+                    populationHistory: [],
+                    lastColonizationAttempt: 0 // ** BUG FIX **
                 };
                 bodiesToAdd.push(ship);
             }
@@ -1322,7 +1327,7 @@
                     intelligence: 0,
                     hasSatellites: false,
                     populationHistory: [],
-                    lastColonizationAttempt: 0
+                    lastColonizationAttempt: 0 // ** BUG FIX **
                 };
 
                 if (type === 'star') {
